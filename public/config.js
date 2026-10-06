@@ -2,8 +2,8 @@
 // Só valores que podem ficar visíveis. NUNCA coloque aqui a chave "service_role" nem tokens do Mercado Pago.
 window.SC = {
   // Supabase > Project Settings > API: "Project URL" e a chave pública ("publishable" ou "anon").
-  supabaseUrl: "https://SEU-PROJETO.supabase.co",
-  supabaseKey: "COLE_AQUI_A_CHAVE_PUBLICA",
+  supabaseUrl: "https://yzixmufoluzgrlxktwln.supabase.co",
+  supabaseKey: "sb_publishable_JIYBF0FFu0JX4I1VRH_BCA_EMIh-r_o",
   // WhatsApp de suporte com DDI e DDD, só dígitos (ex.: "5527999999999"). Vazio = o botão não aparece.
   whatsapp: "",
   // E-mail de contato mostrado no site.

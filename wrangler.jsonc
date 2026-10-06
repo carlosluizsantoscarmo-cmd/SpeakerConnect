@@ -19,8 +19,8 @@
     "VERIFIED_PRICE_CENTS": "19900",
     "VERIFIED_DAYS": "365",
     // Supabase: endereço do projeto e chave pública (publishable/anon). A chave secreta vai em Secrets, nunca aqui.
-    "SUPABASE_URL": "https://SEU-PROJETO.supabase.co",
-    "SUPABASE_ANON_KEY": "COLE_AQUI_A_CHAVE_PUBLICA",
+    "SUPABASE_URL": "https://yzixmufoluzgrlxktwln.supabase.co",
+    "SUPABASE_ANON_KEY": "sb_publishable_JIYBF0FFu0JX4I1VRH_BCA_EMIh-r_o",
     "MAIL_FROM": "SpeakerConnect <contato@speakerconnect.com.br>",
     "NOTIFY_EMAIL": "SEU-EMAIL-PARA-AVISOS@exemplo.com"
   }
