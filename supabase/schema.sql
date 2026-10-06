@@ -526,6 +526,10 @@ values ('fotos', 'fotos', true, 3145728, array['image/jpeg', 'image/png', 'image
 on conflict (id) do update set public = true, file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+-- o envio da foto também precisa enxergar os próprios arquivos (o Supabase confere isso ao gravar)
+drop policy if exists fotos_select on storage.objects;
+create policy fotos_select on storage.objects for select to authenticated
+  using (bucket_id = 'fotos' and (storage.foldername(name))[1] = auth.uid()::text);
 drop policy if exists fotos_insert on storage.objects;
 create policy fotos_insert on storage.objects for insert to authenticated
   with check (bucket_id = 'fotos' and (storage.foldername(name))[1] = auth.uid()::text);

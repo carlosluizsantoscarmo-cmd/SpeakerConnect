@@ -553,7 +553,7 @@
         toast("Enviando foto…");
         resizeImage(f).then(function (blob) {
           var path = user.id + "/foto-" + Date.now() + ".jpg";
-          return sb.storage.from("fotos").upload(path, blob, { contentType: "image/jpeg", upsert: true }).then(function (r) {
+          return sb.storage.from("fotos").upload(path, blob, { contentType: "image/jpeg", upsert: false }).then(function (r) {
             if (r.error) throw r.error;
             var url = sb.storage.from("fotos").getPublicUrl(path).data.publicUrl;
             return sb.from("speakers").update({ photo_url: url }).eq("id", user.id).then(function (u) {
