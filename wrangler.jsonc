@@ -22,6 +22,6 @@
     "SUPABASE_URL": "https://yzixmufoluzgrlxktwln.supabase.co",
     "SUPABASE_ANON_KEY": "sb_publishable_JIYBF0FFu0JX4I1VRH_BCA_EMIh-r_o",
     "MAIL_FROM": "SpeakerConnect <contato@speakerconnect.com.br>",
-    "NOTIFY_EMAIL": "SEU-EMAIL-PARA-AVISOS@exemplo.com"
+    "NOTIFY_EMAIL": "admin@speakerconnect.com.br"
   }
 }
