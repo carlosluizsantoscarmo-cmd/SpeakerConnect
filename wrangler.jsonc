@@ -1,0 +1,27 @@
+{
+  // Troque "name" pelo nome exato do seu projeto no Cloudflare (Workers & Pages).
+  "name": "speakerconnect",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    // Troque pelos endereços do seu domínio (e do workers.dev, se quiser testar por ele).
+    "SITE_URL": "https://speakerconnect.com.br",
+    "ALLOWED_ORIGINS": "https://speakerconnect.com.br,https://www.speakerconnect.com.br,https://speakerconnect.carlosluiz-santoscarmo.workers.dev",
+    // Comissão da plataforma sobre cada contratação (%).
+    "COMMISSION_PCT": "15",
+    // Selo de verificado: preço em centavos (9990 = R$ 99,90) e validade em dias (365 = anual; 0 = para sempre).
+    "VERIFIED_PRICE_CENTS": "9990",
+    "VERIFIED_DAYS": "365",
+    // Supabase: endereço do projeto e chave pública (publishable/anon). A chave secreta vai em Secrets, nunca aqui.
+    "SUPABASE_URL": "https://SEU-PROJETO.supabase.co",
+    "SUPABASE_ANON_KEY": "COLE_AQUI_A_CHAVE_PUBLICA",
+    "MAIL_FROM": "SpeakerConnect <contato@speakerconnect.com.br>",
+    "NOTIFY_EMAIL": "SEU-EMAIL-PARA-AVISOS@exemplo.com"
+  }
+}

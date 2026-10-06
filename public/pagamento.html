@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pagamento | SpeakerConnect</title>
+<meta name="theme-color" content="#1B1A4B">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..900&family=Instrument+Sans:wght@400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header id="top"></header>
+<main class="doc"><div class="wrap" style="text-align:center">
+  <h1 id="t">Conferindo o pagamento…</h1>
+  <p class="lead" id="m" style="margin:16px auto 28px">Isso leva só alguns segundos.</p>
+  <a class="btn" id="go" href="/app/">Voltar ao app</a>
+</div></main>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), id = q.get("id") || "", pid = q.get("payment_id") || q.get("collection_id") || "";
+  var t = document.getElementById("t"), m = document.getElementById("m"), go = document.getElementById("go");
+  var tries = 0;
+  function show(status, kind) {
+    if (status === "paid") {
+      t.textContent = "Pagamento confirmado";
+      m.textContent = kind === "verified" ? "Seu selo de palestrante verificado já está ativo." : "A contratação está confirmada. O contato do palestrante já aparece no app, na página do pedido.";
+      return true;
+    }
+    if (status === "rejected" || status === "cancelled" || q.get("status") === "falhou") {
+      t.textContent = "O pagamento não foi aprovado";
+      m.textContent = "Nada foi cobrado. Volte ao app para tentar de novo com outra forma de pagamento.";
+      return true;
+    }
+    t.textContent = "Pagamento em análise";
+    m.textContent = "Se você pagou por Pix ou boleto, a confirmação pode levar alguns minutos. Avisamos por e-mail assim que ela chegar.";
+    return false;
+  }
+  if (!/^[0-9a-f-]{36}$/.test(id)) { show("rejected"); return; }
+  function check() {
+    fetch("/api/pagamento?id=" + id + (pid ? "&payment_id=" + encodeURIComponent(pid) : ""))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (!show(d.status, d.kind) && ++tries < 6) setTimeout(check, 4000); })
+      .catch(function () { show("pending"); });
+  }
+  check();
+})();
+</script>
+<footer id="bottom"></footer>
+<script src="/config.js"></script>
+<script src="/site.js"></script>
+</body>
+</html>

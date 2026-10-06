@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Equipe | SpeakerConnect</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..900&family=Instrument+Sans:wght@400..700&display=swap" rel="stylesheet">
+<style>
+:root{--stage:#1B1A4B;--brand:#4F46E5;--brand-ink:#3730A3;--spot:#F5B841;--paper:#F6F6FB;--ink:#16152F;--mut:#5B5E7A;--line:#E2E2EE;
+  --ok:#0E7A55;--ok-bg:#DDF3EA;--warn:#8A4B06;--warn-bg:#FDEBCF;--err:#A3221B;--err-bg:#FBDDDA;--soft:#ECEBFD;
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif;--f-body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+:focus-visible{outline:3px solid var(--spot);outline-offset:2px}
+a{color:var(--brand-ink)}
+header{background:var(--stage);color:#fff}
+header .in{max-width:1240px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.logo{font:800 18px var(--f-display);font-stretch:112%;display:flex;gap:8px;align-items:center}
+.logo svg{color:var(--spot)}
+header nav{display:flex;gap:4px;flex-wrap:wrap}
+header nav button{background:none;color:#C9C8EC;border:0;padding:8px 14px;border-radius:999px;font:600 14.5px var(--f-body);cursor:pointer}
+header nav button.on{background:rgba(255,255,255,.12);color:#fff}
+header nav .n{display:inline-block;min-width:20px;padding:0 6px;margin-left:6px;border-radius:999px;background:var(--spot);color:var(--stage);font-size:12px}
+header .who{margin-left:auto;color:#C9C8EC;font-size:14px;display:flex;gap:12px;align-items:center}
+main{max-width:1240px;margin:0 auto;padding:22px 20px 60px}
+h1{font:900 26px var(--f-display);font-stretch:115%;margin:0}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
+.bar .grow{flex:1}
+button,.btn{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:999px;padding:9px 16px;font:700 14px var(--f-body);background:var(--brand);color:#fff;cursor:pointer;text-decoration:none}
+button.ghost{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--line)}
+button.ok{background:var(--ok)}button.bad{background:#fff;color:var(--err);box-shadow:inset 0 0 0 1.5px #EBC1BD}
+button[disabled]{opacity:.5;cursor:wait}
+input,select,textarea{font:500 14.5px var(--f-body);border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;background:#fff;color:var(--ink)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+.stat b{display:block;font:800 22px var(--f-display)}
+.stat span{color:var(--mut);font-size:13.5px}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--mut);font-weight:600;background:#FAFAFD}
+tr:last-child td{border-bottom:0}
+td .sub{color:var(--mut);font-size:13px}
+.pill{display:inline-block;font:700 12px var(--f-body);padding:2px 9px;border-radius:999px;background:var(--soft);color:var(--brand-ink);white-space:nowrap}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.err{background:var(--err-bg);color:var(--err)}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+.acts button{padding:6px 12px;font-size:13px}
+.av{width:42px;height:42px;border-radius:12px;background:var(--stage);color:var(--spot);display:grid;place-items:center;font:800 15px var(--f-display);overflow:hidden;flex:none}
+.av img{width:100%;height:100%;object-fit:cover}
+.who-cell{display:flex;gap:10px}
+.empty{background:#fff;border:1.5px dashed var(--line);border-radius:16px;padding:30px;text-align:center;color:var(--mut)}
+.login{max-width:380px;margin:80px auto;background:#fff;border:1px solid var(--line);border-radius:20px;padding:24px}
+.login label{display:block;font-weight:600;margin:12px 0 6px}
+.login input{width:100%}
+.err{background:var(--err-bg);color:var(--err);border-radius:10px;padding:8px 12px;margin-top:12px}
+details.more{margin-top:6px}
+details.more summary{cursor:pointer;color:var(--brand-ink);font-size:13px}
+details.more p{white-space:pre-wrap;font-size:13.5px;margin:6px 0 0;max-width:60ch}
+dialog{border:0;border-radius:18px;padding:22px;max-width:460px;width:92vw;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(27,26,75,.45)}
+dialog textarea{width:100%;min-height:110px;margin:10px 0}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--stage);color:#fff;padding:10px 18px;border-radius:999px;font-weight:600;opacity:0;transition:.2s;pointer-events:none}
+#toast.show{opacity:1}
+.scroll{overflow-x:auto}
+@media (max-width:760px){th.hide,td.hide{display:none}}
+</style>
+</head>
+<body>
+<header><div class="in">
+  <span class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>Equipe</span>
+  <nav id="tabs" hidden aria-label="Seções">
+    <button data-t="palestrantes" class="on">Palestrantes<span class="n" id="n-pend" hidden></span></button>
+    <button data-t="pedidos">Pedidos</button>
+    <button data-t="pagamentos">Pagamentos<span class="n" id="n-rep" hidden></span></button>
+    <button data-t="empresas">Empresas</button>
+    <button data-t="temas">Temas</button>
+  </nav>
+  <span class="who" id="who"></span>
+</div></header>
+<main id="main"><p style="color:var(--mut)">Carregando…</p></main>
+<dialog id="dlg"><form method="dialog" id="dlgf"><h3 id="dlgt" style="margin:0 0 4px"></h3><p id="dlgp" style="color:var(--mut);margin:0"></p><textarea id="dlgx" maxlength="600"></textarea>
+  <div class="acts" style="justify-content:flex-end"><button value="cancel" class="ghost" type="submit">Voltar</button><button value="ok" id="dlgok" type="submit">Confirmar</button></div></form></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/config.js"></script>
+<script>
+(function () {
+  "use strict";
+  var C = window.SC || {}, sb = null, user = null, tab = "palestrantes", data = {};
+  var main = document.getElementById("main");
+  function e(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function brl(c) { return "R$ " + ((c || 0) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function d(iso) { return iso ? new Date(iso).toLocaleDateString("pt-BR") : "—"; }
+  function $(id) { return document.getElementById(id); }
+  function toast(m) { var t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove("show"); }, 3000); }
+  function initials(n) { var p = String(n || "?").trim().split(/\s+/); return ((p[0] || "?").charAt(0) + (p.length > 1 ? p[p.length - 1].charAt(0) : "")).toUpperCase(); }
+  function verified(s) { return !!(s.verified_until && (s.verified_until === "infinity" || new Date(s.verified_until) > new Date())); }
+  function fail(r) { if (r && r.error) { toast("Erro: " + (r.error.message || "não foi possível")); return true; } return false; }
+  function ask(title, text, placeholder, okLabel) {
+    return new Promise(function (res) {
+      $("dlgt").textContent = title; $("dlgp").textContent = text || ""; $("dlgx").value = ""; $("dlgx").placeholder = placeholder || "";
+      $("dlgx").hidden = placeholder == null; $("dlgok").textContent = okLabel || "Confirmar";
+      var dl = $("dlg");
+      dl.onclose = function () { res(dl.returnValue === "ok" ? $("dlgx").value.trim() : null); };
+      dl.returnValue = ""; dl.showModal();
+    });
+  }
+  function csv(rows, cols, name) {
+    var cell = function (v) { var s = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
+    var text = "﻿" + [cols.map(function (c) { return c[0]; }).join(";")].concat(rows.map(function (r) { return cols.map(function (c) { return cell(c[1](r)); }).join(";"); })).join("\r\n");
+    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })); a.download = name; a.click();
+  }
+
+  // ---------- login ----------
+  function screenLogin(msg) {
+    $("tabs").hidden = true; $("who").innerHTML = "";
+    main.innerHTML = '<form class="login" id="f"><h1>Área da equipe</h1><p style="color:var(--mut);margin:6px 0 0">Entre com a conta de administrador do app.</p>' +
+      '<label for="em">E-mail</label><input id="em" type="email" autocomplete="email"><label for="pw">Senha</label><input id="pw" type="password" autocomplete="current-password">' +
+      (msg ? '<div class="err">' + e(msg) + "</div>" : "") + '<button style="width:100%;justify-content:center;margin-top:16px" id="go">Entrar</button>' +
+      '<p style="font-size:13.5px;color:var(--mut);margin:14px 0 0">Esqueceu a senha? Use "Esqueci minha senha" no <a href="/app/">app</a>.</p></form>';
+    $("f").onsubmit = function (ev) {
+      ev.preventDefault(); $("go").disabled = true;
+      sb.auth.signInWithPassword({ email: $("em").value.trim(), password: $("pw").value }).then(function (r) {
+        $("go").disabled = false;
+        if (r.error) screenLogin(/invalid/i.test(r.error.message) ? "E-mail ou senha incorretos." : r.error.message);
+      });
+    };
+  }
+
+  // ---------- dados ----------
+  function loadAll() {
+    return Promise.all([
+      sb.from("speakers").select("*").order("updated_at", { ascending: false }).limit(2000),
+      sb.from("profiles").select("*").limit(5000),
+      sb.from("companies").select("*").order("created_at", { ascending: false }).limit(2000),
+      sb.from("quotes").select("*").order("created_at", { ascending: false }).limit(2000),
+      sb.from("payments").select("*").order("created_at", { ascending: false }).limit(2000),
+      sb.from("categories").select("*").order("sort")
+    ]).then(function (r) {
+      var bad = r.filter(function (x) { return x.error; })[0];
+      if (bad) throw bad.error;
+      data = { speakers: r[0].data, profiles: r[1].data, companies: r[2].data, quotes: r[3].data, payments: r[4].data, categories: r[5].data };
+      data.prof = {}; data.profiles.forEach(function (p) { data.prof[p.id] = p; });
+      var pend = data.speakers.filter(function (s) { return s.status === "pending"; }).length;
+      var rep = data.payments.filter(function (p) { return p.kind === "quote" && p.status === "paid" && !p.payout_done_at; }).length;
+      $("n-pend").hidden = !pend; $("n-pend").textContent = pend;
+      $("n-rep").hidden = !rep; $("n-rep").textContent = rep;
+    });
+  }
+  function refresh() { return loadAll().then(render).catch(function (err) { main.innerHTML = '<div class="err">Erro ao carregar: ' + e(err.message) + "</div>"; }); }
+
+  // ---------- palestrantes ----------
+  var SST = { draft: ["Rascunho", ""], pending: ["Para aprovar", "warn"], approved: ["Publicado", "ok"], rejected: ["Recusado", "err"], suspended: ["Suspenso", "err"] };
+  var spFilter = "pending";
+  function screenSpeakers() {
+    var list = data.speakers.filter(function (s) { return spFilter === "all" || s.status === spFilter; });
+    var count = function (st) { return data.speakers.filter(function (s) { return s.status === st; }).length; };
+    var opts = [["pending", "Para aprovar"], ["approved", "Publicados"], ["draft", "Rascunhos"], ["rejected", "Recusados"], ["suspended", "Suspensos"], ["all", "Todos"]];
+    var html = '<div class="bar"><h1 class="grow">Palestrantes</h1><select id="spf">' + opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === spFilter ? " selected" : "") + ">" + o[1] + (o[0] !== "all" ? " (" + count(o[0]) + ")" : "") + "</option>"; }).join("") + "</select></div>";
+    if (!list.length) html += '<div class="empty">Nenhum palestrante nesta lista.</div>';
+    else html += '<div class="scroll"><table><thead><tr><th>Palestrante</th><th class="hide">Temas e local</th><th>Situação</th><th>Ações</th></tr></thead><tbody>' + list.map(function (s) {
+      var p = data.prof[s.id] || {}, st = SST[s.status] || [s.status, ""];
+      return "<tr><td><div class=\"who-cell\"><span class=\"av\">" + (/^https:/.test(s.photo_url || "") ? '<img src="' + e(s.photo_url) + '" alt="">' : e(initials(s.public_name))) + "</span><div><b>" + e(s.public_name) + "</b>" + (verified(s) ? ' <span class="pill ok">Verificado</span>' : "") +
+        '<div class="sub">' + e(p.email || "") + (p.phone ? " · " + e(p.phone) : "") + "</div>" +
+        (s.headline ? '<div class="sub">' + e(s.headline) + "</div>" : "") +
+        '<details class="more"><summary>Ver perfil completo</summary><p>' + e(s.bio || "(sem apresentação)") + "</p>" + (s.topics ? "<p>" + e(s.topics) + "</p>" : "") +
+        (s.video_url ? '<p><a href="' + e(s.video_url) + '" target="_blank" rel="noopener">Vídeo</a></p>' : "") + (s.linkedin ? '<p><a href="' + e(s.linkedin) + '" target="_blank" rel="noopener">LinkedIn</a></p>' : "") +
+        "<p>Valor de referência: " + (s.fee_from_cents ? brl(s.fee_from_cents) : "—") + "</p></details></div></div></td>" +
+        '<td class="hide">' + e((s.categories || []).join(", ")) + '<div class="sub">' + e([s.city, s.uf].filter(Boolean).join("/")) + " · " + e((s.formats || []).join(" e ")) + "</div></td>" +
+        '<td><span class="pill ' + st[1] + '">' + st[0] + '</span><div class="sub">Atualizado ' + d(s.updated_at) + "</div>" + (s.review_note && s.status !== "approved" ? '<div class="sub">Nota: ' + e(s.review_note) + "</div>" : "") + "</td>" +
+        '<td><div class="acts">' +
+        (s.status !== "approved" && s.status !== "draft" ? '<button class="ok" data-a="approve" data-id="' + s.id + '">Aprovar</button>' : "") +
+        (s.status === "pending" ? '<button class="bad" data-a="reject" data-id="' + s.id + '">Pedir ajustes</button>' : "") +
+        (s.status === "approved" ? '<a class="btn ghost" style="padding:6px 12px;font-size:13px;color:var(--ink)" href="/palestrante.html?id=' + s.id + '" target="_blank">Ver página</a><button class="bad" data-a="suspend" data-id="' + s.id + '">Suspender</button>' : "") +
+        (s.status === "approved" && !verified(s) ? '<button class="ghost" data-a="seal" data-id="' + s.id + '">Dar selo</button>' : "") +
+        (verified(s) ? '<button class="ghost" data-a="unseal" data-id="' + s.id + '">Tirar selo</button>' : "") +
+        "</div></td></tr>";
+    }).join("") + "</tbody></table></div>";
+    main.innerHTML = html;
+    $("spf").onchange = function () { spFilter = this.value; render(); };
+    main.querySelectorAll("[data-a]").forEach(function (b) { b.onclick = function () { speakerAction(b.getAttribute("data-a"), b.getAttribute("data-id"), b); }; });
+  }
+  function speakerAction(a, id, btn) {
+    var s = data.speakers.filter(function (x) { return x.id === id; })[0];
+    var up = function (patch, msg) { btn.disabled = true; return sb.from("speakers").update(patch).eq("id", id).then(function (r) { if (!fail(r)) { toast(msg); refresh(); } else btn.disabled = false; }); };
+    if (a === "approve") return up({ status: "approved", review_note: null }, s.public_name + " aprovado. Ele recebe um e-mail.");
+    if (a === "reject") return ask("Pedir ajustes", "Explique o que o palestrante precisa mudar. Ele recebe este texto por e-mail.", "Ex.: Coloque uma foto de rosto e detalhe sua experiência.", "Enviar").then(function (t) { if (t) up({ status: "rejected", review_note: t }, "Pedido de ajustes enviado."); });
+    if (a === "suspend") return ask("Suspender " + s.public_name + "?", "O perfil sai do site na hora. Anote o motivo (fica só para a equipe).", "Motivo", "Suspender").then(function (t) { if (t !== null) up({ status: "suspended", review_note: t || null }, "Perfil suspenso."); });
+    if (a === "seal") return ask("Dar o selo sem cobrança?", "Use para cortesias e parceiros. Ele vale por 1 ano.", null, "Dar selo").then(function (t) { if (t !== null) up({ verified_until: new Date(Date.now() + 365 * 864e5).toISOString() }, "Selo ativado."); });
+    if (a === "unseal") return ask("Tirar o selo de " + s.public_name + "?", "", null, "Tirar selo").then(function (t) { if (t !== null) up({ verified_until: null }, "Selo removido."); });
+  }
+
+  // ---------- pedidos ----------
+  var QST = { requested: ["Aguardando proposta", "warn"], proposed: ["Proposta enviada", ""], accepted: ["Aguardando pagamento", "warn"], paid: ["Pago", "ok"], done: ["Realizado", "ok"], declined: ["Recusado", "err"], cancelled: ["Cancelado", "err"] };
+  function screenQuotes() {
+    var q = data.quotes;
+    var html = '<div class="bar"><h1 class="grow">Pedidos de orçamento</h1></div><div class="stats">' +
+      [["requested", "Aguardando proposta"], ["proposed", "Com proposta"], ["accepted", "Aguardando pagamento"], ["paid", "Pagos"]].map(function (x) {
+        return '<div class="stat"><b>' + q.filter(function (r) { return r.status === x[0]; }).length + "</b><span>" + x[1] + "</span></div>";
+      }).join("") + "</div>";
+    if (!q.length) html += '<div class="empty">Nenhum pedido ainda.</div>';
+    else html += '<div class="scroll"><table><thead><tr><th>Evento</th><th>Empresa → palestrante</th><th class="hide">Data</th><th>Valor</th><th>Situação</th></tr></thead><tbody>' + q.map(function (r) {
+      var st = QST[r.status] || [r.status, ""];
+      return "<tr><td><b>" + e(r.title) + '</b><div class="sub">Pedido em ' + d(r.created_at) + " · " + (r.format === "online" ? "online" : e([r.city, r.uf].filter(Boolean).join("/"))) + (r.audience ? " · " + r.audience + " pessoas" : "") + "</div></td>" +
+        "<td>" + e(r.company_name) + '<div class="sub">para ' + e(r.speaker_name) + "</div></td>" +
+        '<td class="hide">' + (r.event_date ? r.event_date.split("-").reverse().join("/") : "A combinar") + "</td>" +
+        "<td>" + (r.amount_cents ? brl(r.amount_cents) : "—") + '</td><td><span class="pill ' + st[1] + '">' + st[0] + "</span></td></tr>";
+    }).join("") + "</tbody></table></div>";
+    main.innerHTML = html;
+  }
+
+  // ---------- pagamentos ----------
+  var PST = { paid: ["Pago", "ok"], pending: ["Pendente", "warn"], in_process: ["Em análise", "warn"], rejected: ["Recusado", "err"], cancelled: ["Cancelado", "err"], refunded: ["Reembolsado", "err"], charged_back: ["Contestado", "err"] };
+  function screenPayments() {
+    var p = data.payments, paid = p.filter(function (x) { return x.status === "paid"; });
+    var sum = function (arr, k) { return arr.reduce(function (a, x) { return a + (x[k] || 0); }, 0); };
+    var quotes = paid.filter(function (x) { return x.kind === "quote"; }), seals = paid.filter(function (x) { return x.kind === "verified"; });
+    var pend = quotes.filter(function (x) { return !x.payout_done_at; });
+    var html = '<div class="bar"><h1 class="grow">Pagamentos</h1><button class="ghost" id="exp">Baixar planilha</button></div><div class="stats">' +
+      '<div class="stat"><b>' + brl(sum(quotes, "amount_cents")) + "</b><span>Contratações pagas (" + quotes.length + ")</span></div>" +
+      '<div class="stat"><b>' + brl(sum(quotes, "commission_cents") + sum(seals, "amount_cents")) + "</b><span>Receita da plataforma (comissões + selos)</span></div>" +
+      '<div class="stat"><b>' + brl(sum(pend, "payout_cents")) + "</b><span>Repasses a fazer (" + pend.length + ")</span></div>" +
+      '<div class="stat"><b>' + seals.length + "</b><span>Selos vendidos</span></div></div>";
+    var show = p.filter(function (x) { return x.status !== "pending" || Date.now() - new Date(x.created_at) < 3 * 864e5; });
+    if (!show.length) html += '<div class="empty">Nenhum pagamento ainda.</div>';
+    else html += '<div class="scroll"><table><thead><tr><th>Descrição</th><th>Pagante</th><th>Valor</th><th class="hide">Comissão / repasse</th><th>Situação</th><th>Repasse</th></tr></thead><tbody>' + show.map(function (x) {
+      var st = PST[x.status] || [x.status, ""], sp = x.speaker_id && data.prof[x.speaker_id];
+      return "<tr><td><b>" + e(x.description || (x.kind === "verified" ? "Selo de verificado" : "Contratação")) + '</b><div class="sub">' + d(x.paid_at || x.created_at) + (x.mp_payment_id ? " · MP " + e(x.mp_payment_id) : "") + "</div></td>" +
+        "<td>" + e(x.payer_name || "") + '<div class="sub">' + e(x.payer_email || "") + "</div></td><td>" + brl(x.amount_cents) + "</td>" +
+        '<td class="hide">' + (x.kind === "quote" ? brl(x.commission_cents) + ' / <b>' + brl(x.payout_cents) + "</b>" + (sp ? '<div class="sub">para ' + e(sp.name) + (sp.phone ? " · " + e(sp.phone) : "") + "</div>" : "") : "—") + "</td>" +
+        '<td><span class="pill ' + st[1] + '">' + st[0] + "</span></td><td>" +
+        (x.kind === "quote" && x.status === "paid" ? (x.payout_done_at ? '<span class="pill ok">Feito ' + d(x.payout_done_at) + '</span>' : '<button class="ok" data-pay="' + x.id + '" style="padding:6px 12px;font-size:13px">Marcar repasse feito</button>') : "—") +
+        "</td></tr>";
+    }).join("") + "</tbody></table></div>" +
+      '<p style="color:var(--mut);font-size:13.5px;margin-top:12px">Reembolsos são feitos no painel do Mercado Pago; a situação aqui atualiza sozinha quando o Mercado Pago avisa.</p>';
+    main.innerHTML = html;
+    main.querySelectorAll("[data-pay]").forEach(function (b) {
+      b.onclick = function () {
+        var x = data.payments.filter(function (y) { return y.id === b.getAttribute("data-pay"); })[0];
+        ask("Repasse feito?", "Confirme que você transferiu " + brl(x.payout_cents) + " ao palestrante.", null, "Sim, repasse feito").then(function (t) {
+          if (t === null) return;
+          b.disabled = true;
+          sb.from("payments").update({ payout_done_at: new Date().toISOString() }).eq("id", x.id).then(function (r) { if (!fail(r)) { toast("Repasse registrado."); refresh(); } });
+        });
+      };
+    });
+    $("exp").onclick = function () {
+      csv(data.payments, [["data", function (x) { return d(x.paid_at || x.created_at); }], ["tipo", function (x) { return x.kind === "verified" ? "selo" : "contratacao"; }], ["descricao", function (x) { return x.description; }],
+        ["pagante", function (x) { return x.payer_name; }], ["email", function (x) { return x.payer_email; }], ["valor", function (x) { return (x.amount_cents / 100).toFixed(2).replace(".", ","); }],
+        ["comissao", function (x) { return (x.commission_cents / 100).toFixed(2).replace(".", ","); }], ["repasse", function (x) { return (x.payout_cents / 100).toFixed(2).replace(".", ","); }],
+        ["situacao", function (x) { return x.status; }], ["repasse_feito_em", function (x) { return x.payout_done_at ? d(x.payout_done_at) : ""; }], ["id_mercado_pago", function (x) { return x.mp_payment_id; }]], "pagamentos-speakerconnect.csv");
+    };
+  }
+
+  // ---------- empresas ----------
+  function screenCompanies() {
+    var c = data.companies;
+    var html = '<div class="bar"><h1 class="grow">Empresas</h1><span style="color:var(--mut)">' + c.length + " cadastradas</span></div>";
+    if (!c.length) html += '<div class="empty">Nenhuma empresa cadastrada ainda.</div>';
+    else html += '<div class="scroll"><table><thead><tr><th>Empresa</th><th>Contato</th><th class="hide">Local</th><th>Pedidos</th><th class="hide">Cadastro</th></tr></thead><tbody>' + c.map(function (x) {
+      var p = data.prof[x.id] || {}, n = data.quotes.filter(function (q) { return q.company_id === x.id; }).length;
+      return "<tr><td><b>" + e(x.company_name) + "</b>" + (x.cnpj ? '<div class="sub">CNPJ ' + e(x.cnpj) + "</div>" : "") + "</td><td>" + e(p.name || "") + '<div class="sub">' + e(p.email || "") + (p.phone ? " · " + e(p.phone) : "") + "</div></td>" +
+        '<td class="hide">' + e([x.city, x.uf].filter(Boolean).join("/") || "—") + "</td><td>" + n + '</td><td class="hide">' + d(x.created_at) + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+    main.innerHTML = html;
+  }
+
+  // ---------- temas ----------
+  function screenThemes() {
+    var html = '<div class="bar"><h1 class="grow">Temas</h1></div><form class="bar" id="add"><input id="nt" maxlength="40" placeholder="Novo tema (ex.: Atendimento ao cliente)" style="flex:1;max-width:420px"><button>Incluir tema</button></form>' +
+      '<div class="scroll"><table><thead><tr><th>Tema</th><th>Palestrantes</th><th>Situação</th><th></th></tr></thead><tbody>' + data.categories.map(function (c) {
+        var n = data.speakers.filter(function (s) { return (s.categories || []).indexOf(c.name) > -1; }).length;
+        return "<tr><td><b>" + e(c.name) + "</b></td><td>" + n + "</td><td>" + (c.active ? '<span class="pill ok">Ativo</span>' : '<span class="pill">Oculto</span>') + '</td><td><button class="ghost" data-c="' + e(c.name) + '" style="padding:6px 12px;font-size:13px">' + (c.active ? "Ocultar" : "Mostrar") + "</button></td></tr>";
+      }).join("") + "</tbody></table></div>";
+    main.innerHTML = html;
+    $("add").onsubmit = function (ev) {
+      ev.preventDefault();
+      var n = $("nt").value.trim();
+      if (n.length < 2) return;
+      sb.from("categories").insert({ name: n, sort: (data.categories.length + 1) * 10 }).then(function (r) { if (!fail(r)) { toast("Tema incluído."); refresh(); } });
+    };
+    main.querySelectorAll("[data-c]").forEach(function (b) {
+      b.onclick = function () {
+        var c = data.categories.filter(function (x) { return x.name === b.getAttribute("data-c"); })[0];
+        sb.from("categories").update({ active: !c.active }).eq("name", c.name).then(function (r) { if (!fail(r)) refresh(); });
+      };
+    });
+  }
+
+  function render() {
+    document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-t") === tab); });
+    ({ palestrantes: screenSpeakers, pedidos: screenQuotes, pagamentos: screenPayments, empresas: screenCompanies, temas: screenThemes })[tab]();
+  }
+
+  function start(session) {
+    user = session && session.user;
+    if (!user) return screenLogin();
+    sb.from("profiles").select("role,name").eq("id", user.id).maybeSingle().then(function (r) {
+      if (!r.data || r.data.role !== "admin") {
+        main.innerHTML = '<div class="login"><h1>Sem acesso</h1><p style="color:var(--mut)">Esta conta não é da equipe. Para liberar, rode no Supabase (SQL Editor):</p><pre style="white-space:pre-wrap;background:var(--paper);padding:10px;border-radius:10px;font-size:13px">update public.profiles set role = \'admin\'\nwhere email = \'' + e(user.email) + "';</pre><button class=\"ghost\" id=\"out\">Sair</button></div>";
+        $("out").onclick = function () { sb.auth.signOut(); };
+        return;
+      }
+      $("tabs").hidden = false;
+      $("who").innerHTML = e(r.data.name) + ' <button class="ghost" id="out" style="padding:6px 12px;font-size:13px">Sair</button>';
+      $("out").onclick = function () { sb.auth.signOut(); };
+      refresh();
+    });
+  }
+
+  var ok = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(C.supabaseUrl || "") && C.supabaseKey && !/COLE_AQUI/.test(C.supabaseKey);
+  if (!ok || !window.supabase) { main.innerHTML = '<div class="login"><h1>Painel em preparação</h1><p style="color:var(--mut)">Preencha o config.js com os dados do Supabase.</p></div>'; return; }
+  sb = window.supabase.createClient(C.supabaseUrl, C.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } });
+  document.querySelectorAll("#tabs button").forEach(function (b) { b.onclick = function () { tab = b.getAttribute("data-t"); render(); }; });
+  var booted = false;
+  sb.auth.onAuthStateChange(function (ev, s) { if (booted && (ev === "SIGNED_IN" || ev === "SIGNED_OUT")) start(s); });
+  sb.auth.getSession().then(function (r) { booted = true; start(r.data.session); });
+})();
+</script>
+</body>
+</html>

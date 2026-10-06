@@ -1,0 +1,11 @@
+{
+  "name": "speakerconnect",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/worker.test.mjs",
+    "test:db": "sh test/run-db-tests.sh",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  }
+}
