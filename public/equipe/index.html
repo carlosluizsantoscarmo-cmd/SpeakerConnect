@@ -155,8 +155,9 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
 
   // ---------- palestrantes ----------
   var SST = { draft: ["Rascunho", ""], pending: ["Para aprovar", "warn"], approved: ["Publicado", "ok"], rejected: ["Recusado", "err"], suspended: ["Suspenso", "err"] };
-  var spFilter = "pending";
+  var spFilter = null; // abre em "Para aprovar" se houver alguém esperando; senão, em "Todos"
   function screenSpeakers() {
+    if (!spFilter) spFilter = data.speakers.some(function (s) { return s.status === "pending"; }) ? "pending" : "all";
     var list = data.speakers.filter(function (s) { return spFilter === "all" || s.status === spFilter; });
     var count = function (st) { return data.speakers.filter(function (s) { return s.status === st; }).length; };
     var opts = [["pending", "Para aprovar"], ["approved", "Publicados"], ["draft", "Rascunhos"], ["rejected", "Recusados"], ["suspended", "Suspensos"], ["all", "Todos"]];

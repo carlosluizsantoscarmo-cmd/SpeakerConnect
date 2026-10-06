@@ -666,7 +666,13 @@
       $("out").onclick = function () { sb.auth.signOut(); };
       return;
     }
-    if (profile.role === "admin") { location.href = "/equipe/"; return; }
+    if (profile.role === "admin") {
+      app.className = "noNav";
+      app.innerHTML = '<div class="pad"><div class="card"><h3>Você entrou com a conta da equipe</h3><p class="muted small" style="margin:6px 0 0">Contas da equipe não pedem orçamento nem têm perfil de palestrante. Para testar como empresa ou palestrante, saia e entre com outra conta.</p>' +
+        '<a class="btn full" href="/equipe/">Abrir o painel da equipe</a><button class="full ghost" id="out" type="button">Sair e entrar com outra conta</button></div></div>';
+      $("out").onclick = function () { sb.auth.signOut(); };
+      return;
+    }
     var after = null; try { after = sessionStorage.getItem("sc_after_login"); if (after) sessionStorage.removeItem("sc_after_login"); } catch (x) {}
     if (after && after !== location.hash) { location.hash = after; return; }
     if (p.path === "#/pedidos") return screenQuotes();
