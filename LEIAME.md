@@ -15,8 +15,8 @@ test/                      testes (servidor e banco)
 
 ## Como funciona o dinheiro
 
-- **Contratação:** a empresa pede orçamento, o palestrante envia o valor, a empresa aceita e paga pelo Mercado Pago. A plataforma fica com a comissão (`COMMISSION_PCT`, hoje 15%) e repassa o restante ao palestrante. Os repasses são feitos por você (Pix) e marcados no painel em **Pagamentos > Marcar repasse feito**.
-- **Selo de verificado:** o palestrante aprovado paga pelo app (`VERIFIED_PRICE_CENTS`, hoje R$ 99,90) e o selo vale `VERIFIED_DAYS` dias (hoje 365; use 0 para nunca vencer).
+- **Contratação:** a empresa pede orçamento, o palestrante envia o valor, a empresa aceita e paga pelo Mercado Pago. A plataforma fica com a comissão (`COMMISSION_PCT`, hoje 20%) e repassa o restante ao palestrante. Os repasses são feitos por você (Pix) e marcados no painel em **Pagamentos > Marcar repasse feito**.
+- **Selo de verificado:** o palestrante aprovado paga pelo app (`VERIFIED_PRICE_CENTS`, hoje R$ 199,00) e o selo vale `VERIFIED_DAYS` dias (hoje 365; use 0 para nunca vencer).
 - O telefone e o e-mail das duas partes só aparecem **depois do pagamento**, para que ninguém feche negócio por fora.
 - O valor cobrado vem sempre do banco de dados, nunca do navegador. O pagamento só é aceito depois de conferido na API do Mercado Pago (valor e moeda).
 

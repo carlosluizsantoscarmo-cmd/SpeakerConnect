@@ -16,8 +16,8 @@
 //   RESEND_API_KEY (Secret), MAIL_FROM, NOTIFY_EMAIL    e-mails
 //   NOTIFY_SECRET                              (Secret)  mesma senha gravada no Supabase (private.settings)
 //   SITE_URL                                   endereço principal, ex.: https://speakerconnect.com.br
-//   COMMISSION_PCT                             comissão da plataforma, ex.: 15
-//   VERIFIED_PRICE_CENTS                       preço do selo em centavos, ex.: 9990 = R$ 99,90
+//   COMMISSION_PCT                             comissão da plataforma, ex.: 20
+//   VERIFIED_PRICE_CENTS                       preço do selo em centavos, ex.: 19900 = R$ 199,00
 //   VERIFIED_DAYS                              validade do selo em dias (365 = anual; 0 = para sempre)
 //   ALLOWED_ORIGINS                            endereços aceitos, separados por vírgula
 

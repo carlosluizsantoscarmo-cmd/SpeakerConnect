@@ -9,6 +9,6 @@ window.SC = {
   // E-mail de contato mostrado no site.
   email: "contato@speakerconnect.com.br",
   // Mostrados nas páginas (o valor cobrado de verdade é definido no Cloudflare).
-  commissionPct: 15,
-  verifiedPrice: "R$ 99,90 por ano"
+  commissionPct: 20,
+  verifiedPrice: "R$ 199,00 por ano"
 };

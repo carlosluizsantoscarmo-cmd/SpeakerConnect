@@ -14,9 +14,9 @@
     "SITE_URL": "https://speakerconnect.com.br",
     "ALLOWED_ORIGINS": "https://speakerconnect.com.br,https://www.speakerconnect.com.br,https://speakerconnect.carlosluiz-santoscarmo.workers.dev",
     // Comissão da plataforma sobre cada contratação (%).
-    "COMMISSION_PCT": "15",
-    // Selo de verificado: preço em centavos (9990 = R$ 99,90) e validade em dias (365 = anual; 0 = para sempre).
-    "VERIFIED_PRICE_CENTS": "9990",
+    "COMMISSION_PCT": "20",
+    // Selo de verificado: preço em centavos (19900 = R$ 199,00) e validade em dias (365 = anual; 0 = para sempre).
+    "VERIFIED_PRICE_CENTS": "19900",
     "VERIFIED_DAYS": "365",
     // Supabase: endereço do projeto e chave pública (publishable/anon). A chave secreta vai em Secrets, nunca aqui.
     "SUPABASE_URL": "https://SEU-PROJETO.supabase.co",
