@@ -60,6 +60,15 @@ select tst.no('palestrante não vira admin', $$update profiles set role='admin' 
 select tst.no('perfil incompleto não vai para análise', $$update speakers set status='pending' where id=auth.uid()$$);
 select tst.no('categoria inexistente barrada', $$update speakers set categories='{Astrologia}' where id=auth.uid()$$);
 select tst.ok('palestrante completa o perfil', $$update speakers set headline='Liderança que gera resultado', bio=repeat('Experiência em grandes empresas. ', 4), categories='{Liderança,Vendas}', city='Vitória', uf='ES', fee_from_cents=500000 where id=auth.uid()$$);
+select tst.no('sem documento não vai para análise', $$update speakers set status='pending' where id=auth.uid()$$);
+select tst.no('documento na pasta de outro é barrado', $$insert into speaker_documents(speaker_id, doc_type, front_path) values (auth.uid(), 'RG', '00000000-0000-0000-0000-000000000002/rg.jpg')$$);
+select tst.no('não cria documento em nome de outro', $$insert into speaker_documents(speaker_id, doc_type, front_path) values ('00000000-0000-0000-0000-000000000002', 'RG', '00000000-0000-0000-0000-000000000002/rg.jpg')$$);
+select tst.ok('palestrante envia o documento', $$insert into speaker_documents(speaker_id, doc_type, front_path, back_path) values (auth.uid(), 'CNH', auth.uid()::text || '/doc-frente.jpg', auth.uid()::text || '/doc-verso.jpg')$$);
+select tst.no('sem aceitar o termo não vai para análise', $$update speakers set status='pending' where id=auth.uid()$$);
+select tst.ok('palestrante aceita o termo', $$update speaker_documents set terms_version='2026-10-v1' where speaker_id=auth.uid()$$);
+select tst.eq('data do envio e do aceite gravadas', $$select (sent_at is not null and terms_at is not null)::text from speaker_documents$$, 'true');
+select tst.ok('documento na própria pasta (Storage)', $$insert into storage.objects(bucket_id, name) values ('documentos', auth.uid()::text || '/doc-frente.jpg')$$);
+select tst.no('documento na pasta de outro (Storage)', $$insert into storage.objects(bucket_id, name) values ('documentos', '00000000-0000-0000-0000-000000000002/x.jpg')$$);
 select tst.ok('palestrante envia para análise', $$update speakers set status='pending' where id=auth.uid()$$);
 select tst.no('palestrante não edita outro perfil', $$update speakers set bio='hackeado' where id='00000000-0000-0000-0000-000000000002'$$);
 select tst.eq('palestrante não vê outros perfis', $$select count(*)::text from profiles$$, '1');
@@ -78,6 +87,8 @@ reset role;
 set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
 select tst.ok('equipe aprova palestrante', $$update speakers set status='approved' where id='00000000-0000-0000-0000-000000000001'$$);
 select tst.eq('equipe vê todos os perfis', $$select count(*)::text from profiles$$, '5');
+select tst.eq('equipe vê o documento', $$select doc_type from speaker_documents$$, 'CNH');
+select tst.eq('equipe abre o arquivo do documento', $$select count(*)::text from storage.objects where bucket_id='documentos'$$, '1');
 select tst.ok('equipe cria categoria', $$insert into categories(name) values ('Astrologia')$$);
 reset role;
 select tst.eq('aviso de aprovação disparado', $$select body->>'type' from net.calls order by ctid desc limit 1$$, 'perfil_aprovado');
@@ -85,6 +96,7 @@ select tst.eq('aviso leva a senha', $$select headers->>'x-sc-secret' from net.ca
 
 select set_config('request.jwt.claim.sub', '', false);
 set role anon;
+select tst.no('visitante não vê documentos', $$select * from speaker_documents$$);
 select tst.eq('visitante vê só o aprovado', $$select string_agg(public_name, ',') from speakers$$, 'Ana Palestrante');
 reset role;
 
@@ -109,6 +121,8 @@ select tst.eq('aviso de pedido novo', $$select count(*)::text from net.calls whe
 
 -- ---------- outra empresa e outro palestrante não enxergam ----------
 set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000004', false);
+select tst.eq('empresa não vê documentos', $$select count(*)::text from speaker_documents$$, '0');
+select tst.eq('empresa não vê arquivos de documento', $$select count(*)::text from storage.objects where bucket_id='documentos'$$, '0');
 select tst.eq('outra empresa não vê o pedido', $$select count(*)::text from quotes$$, '0');
 select tst.eq('outra empresa não vê mensagens', $$select count(*)::text from quote_messages$$, '0');
 select tst.no('outra empresa não muda o pedido', $$update quotes set status='cancelled'$$);

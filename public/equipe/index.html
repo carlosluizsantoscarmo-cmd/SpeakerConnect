@@ -145,11 +145,13 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
       sb.from("companies").select("*").order("created_at", { ascending: false }).limit(2000),
       sb.from("quotes").select("*").order("created_at", { ascending: false }).limit(2000),
       sb.from("payments").select("*").order("created_at", { ascending: false }).limit(2000),
-      sb.from("categories").select("*").order("sort")
+      sb.from("categories").select("*").order("sort"),
+      sb.from("speaker_documents").select("*").limit(3000)
     ]).then(function (r) {
       var bad = r.filter(function (x) { return x.error; })[0];
       if (bad) throw bad.error;
-      data = { speakers: r[0].data, profiles: r[1].data, companies: r[2].data, quotes: r[3].data, payments: r[4].data, categories: r[5].data };
+      data = { speakers: r[0].data, profiles: r[1].data, companies: r[2].data, quotes: r[3].data, payments: r[4].data, categories: r[5].data, docs: {} };
+      (r[6].data || []).forEach(function (x) { data.docs[x.speaker_id] = x; });
       data.prof = {}; data.profiles.forEach(function (p) { data.prof[p.id] = p; });
       var pend = data.speakers.filter(function (s) { return s.status === "pending"; }).length;
       var rep = data.payments.filter(function (p) { return p.kind === "quote" && p.status === "paid" && !p.payout_done_at; }).length;
@@ -176,7 +178,7 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
         (s.headline ? '<div class="sub">' + e(s.headline) + "</div>" : "") +
         '<details class="more"><summary>Ver perfil completo</summary><p>' + e(s.bio || "(sem apresentação)") + "</p>" + (s.topics ? "<p>" + e(s.topics) + "</p>" : "") +
         (s.video_url ? '<p><a href="' + e(s.video_url) + '" target="_blank" rel="noopener">Vídeo</a></p>' : "") + (s.linkedin ? '<p><a href="' + e(s.linkedin) + '" target="_blank" rel="noopener">LinkedIn</a></p>' : "") +
-        "<p>Valor de referência: " + (s.fee_from_cents ? brl(s.fee_from_cents) : "—") + "</p></details></div></div></td>" +
+        "<p>Valor de referência: " + (s.fee_from_cents ? brl(s.fee_from_cents) : "—") + "</p></details>" + docLine(s.id) + "</div></div></td>" +
         '<td class="hide">' + e((s.categories || []).join(", ")) + '<div class="sub">' + e([s.city, s.uf].filter(Boolean).join("/")) + " · " + e((s.formats || []).join(" e ")) + "</div></td>" +
         '<td><span class="pill ' + st[1] + '">' + st[0] + '</span><div class="sub">Atualizado ' + d(s.updated_at) + "</div>" + (s.review_note && s.status !== "approved" ? '<div class="sub">Nota: ' + e(s.review_note) + "</div>" : "") + "</td>" +
         '<td><div class="acts">' +
@@ -190,11 +192,35 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     main.innerHTML = html;
     $("spf").onchange = function () { spFilter = this.value; render(); };
     main.querySelectorAll("[data-a]").forEach(function (b) { b.onclick = function () { speakerAction(b.getAttribute("data-a"), b.getAttribute("data-id"), b); }; });
+    main.querySelectorAll("[data-doc]").forEach(function (a) {
+      a.onclick = function (ev) {
+        ev.preventDefault();
+        var w = window.open("about:blank", "_blank");
+        sb.storage.from("documentos").createSignedUrl(a.getAttribute("data-doc"), 300).then(function (r) {
+          if (r.error || !r.data) { if (w) w.close(); toast("Não foi possível abrir o documento."); return; }
+          if (w) w.location = r.data.signedUrl; else location.href = r.data.signedUrl;
+        });
+      };
+    });
+  }
+  function docLine(id) {
+    var doc = data.docs[id];
+    if (!doc || !doc.front_path) return '<div class="sub" style="color:var(--err);margin-top:6px">Sem documento enviado</div>';
+    return '<div class="sub" style="margin-top:6px">' + e(doc.doc_type || "Documento") + " enviado " + d(doc.sent_at) + ' · <a href="#" data-doc="' + e(doc.front_path) + '">ver frente</a>' +
+      (doc.back_path ? ' · <a href="#" data-doc="' + e(doc.back_path) + '">ver verso</a>' : "") +
+      (doc.terms_version ? " · termo aceito " + d(doc.terms_at) : ' · <b style="color:var(--err)">termo não aceito</b>') + "</div>";
   }
   function speakerAction(a, id, btn) {
     var s = data.speakers.filter(function (x) { return x.id === id; })[0];
     var up = function (patch, msg) { btn.disabled = true; return sb.from("speakers").update(patch).eq("id", id).then(function (r) { if (!fail(r)) { toast(msg); refresh(); } else btn.disabled = false; }); };
-    if (a === "approve") return up({ status: "approved", review_note: null }, s.public_name + " aprovado. Ele recebe um e-mail.");
+    if (a === "approve") {
+      var doc = data.docs[id];
+      if (!doc || !doc.front_path || !doc.terms_version) {
+        return ask("Aprovar sem documento?", s.public_name + " ainda não enviou o documento ou não aceitou o termo do palestrante. Aprovar mesmo assim?", null, "Aprovar mesmo assim")
+          .then(function (t) { if (t !== null) up({ status: "approved", review_note: null }, s.public_name + " aprovado."); });
+      }
+      return up({ status: "approved", review_note: null }, s.public_name + " aprovado. Ele recebe um e-mail.");
+    }
     if (a === "reject") return ask("Pedir ajustes", "Explique o que o palestrante precisa mudar. Ele recebe este texto por e-mail.", "Ex.: Coloque uma foto de rosto e detalhe sua experiência.", "Enviar").then(function (t) { if (t) up({ status: "rejected", review_note: t }, "Pedido de ajustes enviado."); });
     if (a === "suspend") return ask("Suspender " + s.public_name + "?", "O perfil sai do site na hora. Anote o motivo (fica só para a equipe).", "Motivo", "Suspender").then(function (t) { if (t !== null) up({ status: "suspended", review_note: t || null }, "Perfil suspenso."); });
     if (a === "seal") return ask("Dar o selo sem cobrança?", "Use para cortesias e parceiros. Ele vale por 1 ano.", null, "Dar selo").then(function (t) { if (t !== null) up({ verified_until: new Date(Date.now() + 365 * 864e5).toISOString() }, "Selo ativado."); });

@@ -639,6 +639,17 @@ async function contaDelete({ request, env }) {
   if (me.profile.role === "admin") return json(400, { error: "Contas da equipe são removidas pelo Supabase." });
   const open = await sb(env, `/rest/v1/quotes?or=(company_id.eq.${me.id},speaker_id.eq.${me.id})&status=eq.paid&select=id`);
   if (Array.isArray(open) && open.length) return json(400, { error: "Você tem uma palestra paga ainda não realizada. Fale com a equipe para encerrar a conta." });
+  // LGPD: o documento de identidade sai junto com a conta.
+  try {
+    const doc = await one(env, `/rest/v1/speaker_documents?speaker_id=eq.${me.id}&select=front_path,back_path`);
+    const paths = doc ? [doc.front_path, doc.back_path].filter(Boolean) : [];
+    if (paths.length) {
+      await fetch(env.SUPABASE_URL.replace(/\/$/, "") + "/storage/v1/object/documentos", {
+        method: "DELETE", headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ prefixes: paths }),
+      });
+    }
+  } catch (e) { console.error("conta: falha ao apagar o documento:", e && e.message); }
   const r = await fetch(env.SUPABASE_URL.replace(/\/$/, "") + "/auth/v1/admin/users/" + me.id, {
     method: "DELETE", headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY },
   });

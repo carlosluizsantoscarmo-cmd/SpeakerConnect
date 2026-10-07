@@ -233,6 +233,11 @@ begin
        or cardinality(new.categories) = 0 or new.city is null or new.uf is null) then
     raise exception 'Complete o perfil antes de enviar: título, apresentação (mín. 80 letras), tema, cidade e UF.' using errcode = '23514';
   end if;
+  if new.status = 'pending' and not exists (
+       select 1 from public.speaker_documents d
+        where d.speaker_id = new.id and d.front_path is not null and d.terms_version is not null) then
+    raise exception 'Envie a foto do seu documento e aceite o termo do palestrante antes de enviar para análise.' using errcode = '23514';
+  end if;
   return new;
 end $$;
 drop trigger if exists guard_speakers on public.speakers;
@@ -550,6 +555,79 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function public.mp_connected(uuid) from public, anon;
 grant execute on function public.mp_connected(uuid) to authenticated;
+
+-- ---------- documento e termo do palestrante (privado) ----------
+-- Só o próprio palestrante e a equipe veem. Exigido para enviar o perfil para análise.
+create table if not exists public.speaker_documents (
+  speaker_id    uuid primary key references public.speakers(id) on delete cascade,
+  doc_type      text check (doc_type is null or doc_type in ('RG', 'CNH', 'RNE', 'Passaporte')),
+  front_path    text check (front_path is null or front_path ~ '^[0-9a-f-]{36}/'),
+  back_path     text check (back_path is null or back_path ~ '^[0-9a-f-]{36}/'),
+  sent_at       timestamptz,
+  terms_version text check (terms_version is null or char_length(terms_version) <= 30),
+  terms_at      timestamptz,
+  updated_at    timestamptz not null default now()
+);
+alter table public.speaker_documents enable row level security;
+revoke all on public.speaker_documents from anon, authenticated;
+grant select, insert, update (doc_type, front_path, back_path, terms_version) on public.speaker_documents to authenticated;
+
+create or replace function private.guard_speaker_documents() returns trigger
+language plpgsql as $$
+begin
+  new.updated_at := now();
+  if tg_op = 'UPDATE' and new.speaker_id <> old.speaker_id then
+    raise exception 'Você não pode alterar esse campo.' using errcode = '42501';
+  end if;
+  -- os arquivos precisam estar na pasta do próprio palestrante
+  if (new.front_path is not null and split_part(new.front_path, '/', 1) <> new.speaker_id::text)
+     or (new.back_path is not null and split_part(new.back_path, '/', 1) <> new.speaker_id::text) then
+    raise exception 'Arquivo inválido.' using errcode = '42501';
+  end if;
+  if new.front_path is distinct from (case when tg_op = 'UPDATE' then old.front_path end)
+     or new.back_path is distinct from (case when tg_op = 'UPDATE' then old.back_path end) then
+    new.sent_at := now();
+  elsif tg_op = 'UPDATE' then
+    new.sent_at := old.sent_at;
+  end if;
+  if new.terms_version is distinct from (case when tg_op = 'UPDATE' then old.terms_version end) then
+    new.terms_at := case when new.terms_version is null then null else now() end;
+  elsif tg_op = 'UPDATE' then
+    new.terms_at := old.terms_at;
+  end if;
+  return new;
+end $$;
+drop trigger if exists guard_speaker_documents on public.speaker_documents;
+create trigger guard_speaker_documents before insert or update on public.speaker_documents
+  for each row execute function private.guard_speaker_documents();
+
+drop policy if exists sdoc_read on public.speaker_documents;
+create policy sdoc_read on public.speaker_documents for select to authenticated
+  using (speaker_id = auth.uid() or public.is_admin());
+drop policy if exists sdoc_insert on public.speaker_documents;
+create policy sdoc_insert on public.speaker_documents for insert to authenticated
+  with check (speaker_id = auth.uid() and exists (select 1 from public.speakers where id = auth.uid()));
+drop policy if exists sdoc_update on public.speaker_documents;
+create policy sdoc_update on public.speaker_documents for update to authenticated
+  using (speaker_id = auth.uid()) with check (speaker_id = auth.uid());
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('documentos', 'documentos', false, 6291456, array['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists docs_insert on storage.objects;
+create policy docs_insert on storage.objects for insert to authenticated
+  with check (bucket_id = 'documentos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists docs_select on storage.objects;
+create policy docs_select on storage.objects for select to authenticated
+  using (bucket_id = 'documentos' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+drop policy if exists docs_update on storage.objects;
+create policy docs_update on storage.objects for update to authenticated
+  using (bucket_id = 'documentos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists docs_delete on storage.objects;
+create policy docs_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'documentos' and (storage.foldername(name))[1] = auth.uid()::text);
 
 -- ---------- fotos dos palestrantes (Storage) ----------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

@@ -21,6 +21,7 @@ async function setup({ speakerStatus = "approved", quoteStatus = "accepted", mpA
     quote_messages: [],
     payments: [],
     speaker_mp_accounts: [],
+    speaker_documents: [{ speaker_id: SPEAKER, doc_type: "CNH", front_path: SPEAKER + "/doc-frente.jpg", back_path: null }],
   };
   const tokens = { "a.b.ana": SPEAKER, "a.b.carla": COMPANY, "a.b.equipe": ADMIN };
   const mails = [], deleted = [], mpCalls = [], mpPayments = {};
@@ -56,6 +57,7 @@ async function setup({ speakerStatus = "approved", quoteStatus = "accepted", mpA
       return id ? Response.json({ id, email: db.profiles.find((p) => p.id === id).email }) : new Response("no", { status: 401 });
     }
     if (u.host === "sb.test" && u.pathname.startsWith("/auth/v1/admin/users/")) { deleted.push(u.pathname.split("/").pop()); return Response.json({}); }
+    if (u.host === "sb.test" && u.pathname === "/storage/v1/object/documentos" && method === "DELETE") { deleted.push(...body.prefixes); return Response.json([]); }
     if (u.host === "sb.test" && u.pathname.startsWith("/rest/v1/")) {
       assert.equal(opt.headers.Authorization, "Bearer service");
       const table = db[u.pathname.slice(9)];
@@ -266,4 +268,10 @@ test("endereços desconhecidos e páginas", async () => {
   assert.equal((await t.call("/api/nada")).status, 404);
   assert.equal((await t.call("/api/mp/pagar")).status, 405);
   assert.equal(await (await t.call("/")).text(), "pagina");
+});
+
+test("excluir conta do palestrante apaga também o documento", async () => {
+  const t = await setup({ quoteStatus: "done" });
+  assert.equal((await t.call("/api/conta", { method: "DELETE", token: "a.b.ana" })).status, 200);
+  assert.deepEqual(t.deleted, [SPEAKER + "/doc-frente.jpg", SPEAKER]);
 });

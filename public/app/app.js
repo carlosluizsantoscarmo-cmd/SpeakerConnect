@@ -5,8 +5,8 @@
   "use strict";
   var C = window.SC || {};
   var app = document.getElementById("app");
-  var TERMS = "2026-10-v1";
-  var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false, mpConn = null, payActive = false, payTimer = null;
+  var TERMS = "2026-10-v1", SPEAKER_TERMS = "2026-10-v1";
+  var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false, mpConn = null, myDoc = null, payActive = false, payTimer = null;
 
   // ---------- utilidades ----------
   function e(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -39,7 +39,7 @@
     if (/rate limit|too many/i.test(m)) return "Muitas tentativas. Espere um pouco e tente de novo.";
     if (/failed to fetch|network|load failed/i.test(m)) return "Sem conexão. Confira a internet e tente de novo.";
     if (/row-level security|permission denied|42501/i.test(m)) return "Sem permissão para essa ação.";
-    if (/Complete o perfil|Categoria inválida|não está disponível|Mudança|Só a|Depois da proposta|Informe o valor|Você não pode/.test(m)) return m;
+    if (/Envie a foto do seu documento|Complete o perfil|Categoria inválida|não está disponível|Mudança|Só a|Depois da proposta|Informe o valor|Você não pode/.test(m)) return m;
     try { console.error("Erro do app:", err); } catch (x) {}
     return "Não foi possível concluir agora. Tente de novo em instantes.";
   }
@@ -205,7 +205,10 @@
     return sb.from("profiles").select("*").eq("id", user.id).maybeSingle().then(function (r) {
       profile = r.data;
       if (!profile) return null;
-      if (profile.role === "speaker") return sb.from("speakers").select("*").eq("id", user.id).maybeSingle().then(function (s) { me = s.data; });
+      if (profile.role === "speaker") return Promise.all([
+        sb.from("speakers").select("*").eq("id", user.id).maybeSingle(),
+        sb.from("speaker_documents").select("*").eq("speaker_id", user.id).maybeSingle()
+      ]).then(function (r) { me = r[0].data; myDoc = r[1].data || null; });
       if (profile.role === "company") return sb.from("companies").select("*").eq("id", user.id).maybeSingle().then(function (c) { me = c.data; });
     });
   }
@@ -228,7 +231,8 @@
   function profileChecklist(s) {
     var items = [
       [!!s.photo_url, "Foto"], [(s.headline || "").length >= 10, "Título da palestra"], [(s.bio || "").length >= 80, "Apresentação (mín. 80 letras)"],
-      [(s.categories || []).length > 0, "Pelo menos um tema"], [!!(s.city && s.uf), "Cidade e estado"], [!!s.fee_from_cents, "Valor de referência"]
+      [(s.categories || []).length > 0, "Pelo menos um tema"], [!!(s.city && s.uf), "Cidade e estado"], [!!s.fee_from_cents, "Valor de referência"],
+      [!!(myDoc && myDoc.front_path), "Documento de identidade"], [!!(myDoc && myDoc.terms_version), "Termo do palestrante aceito"]
     ];
     return '<ul class="steps">' + items.map(function (i) { return '<li class="' + (i[0] ? "done" : "") + '"><span class="dot">' + (i[0] ? icon("check", 14) : "") + "</span>" + e(i[1]) + "</li>"; }).join("") + "</ul>";
   }
@@ -624,11 +628,11 @@
   }
 
   // ---------- perfil do palestrante ----------
-  function resizeImage(file) {
+  function resizeImage(file, maxSide) {
     return new Promise(function (res, rej) {
       var img = new Image(), url = URL.createObjectURL(file);
       img.onload = function () {
-        var max = 900, w = img.width, h = img.height, k = Math.min(1, max / Math.max(w, h));
+        var max = maxSide || 900, w = img.width, h = img.height, k = Math.min(1, max / Math.max(w, h));
         var cv = document.createElement("canvas"); cv.width = Math.round(w * k); cv.height = Math.round(h * k);
         cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
         URL.revokeObjectURL(url);
@@ -638,6 +642,60 @@
       img.src = url;
     });
   }
+  // ---------- documento de identidade e termo do palestrante (área privada) ----------
+  function docCard() {
+    var d = myDoc || {};
+    var types = ["RG", "CNH", "RNE", "Passaporte"];
+    function fileRow(side, label, path) {
+      return '<div class="docrow"><div><b>' + label + "</b>" + (path ? '<span class="pill ok">Enviado</span>' : '<span class="pill warn">' + (side === "front" ? "Falta enviar" : "Opcional") + "</span>") + "</div>" +
+        '<label for="doc-' + side + '" class="btn slim ghost" style="margin:0;cursor:pointer">' + (path ? "Trocar" : "Enviar foto") + '</label><input id="doc-' + side + '" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" hidden></div>';
+    }
+    return '<div class="card doccard"><h3>Documento e termo</h3><p class="muted small" style="margin:4px 0 0">Usamos o documento só para confirmar sua identidade. Ele fica numa área privada: só você e a equipe do SpeakerConnect veem.</p>' +
+      '<label for="dt">Tipo de documento</label><select id="dt">' + types.map(function (t) { return "<option" + (d.doc_type === t ? " selected" : "") + ">" + t + "</option>"; }).join("") + "</select>" +
+      fileRow("front", "Frente (ou PDF da CNH digital)", d.front_path) + fileRow("back", "Verso", d.back_path) +
+      (d.sent_at ? '<p class="hint">Enviado em ' + e(new Date(d.sent_at).toLocaleDateString("pt-BR")) + ".</p>" : "") +
+      '<label class="check"><input type="checkbox" id="tsp"' + (d.terms_version ? " checked" : "") + '><span>Li e aceito o <a href="/termo-palestrante.html" target="_blank">termo do palestrante</a>.' + (d.terms_at ? ' <span class="muted">(aceito em ' + e(new Date(d.terms_at).toLocaleDateString("pt-BR")) + ")</span>" : "") + "</span></label></div>";
+  }
+  function saveDoc(patch) {
+    var row = Object.assign({ speaker_id: user.id, doc_type: (myDoc && myDoc.doc_type) || val("dt") || "RG" }, patch);
+    var q = myDoc ? sb.from("speaker_documents").update(patch).eq("speaker_id", user.id) : sb.from("speaker_documents").insert(row);
+    return q.select("*").single().then(function (r) { if (r.error) throw r.error; myDoc = r.data; return r.data; });
+  }
+  // Atualiza só o quadro do documento, sem perder o que a pessoa já digitou no resto do perfil.
+  function refreshDoc() {
+    var el = document.querySelector(".doccard");
+    if (!el) return;
+    el.outerHTML = docCard();
+    bindDoc();
+  }
+  function bindDoc() {
+    if (!$("dt")) return;
+    $("dt").onchange = function () { if (myDoc) saveDoc({ doc_type: val("dt") }).catch(function (x) { toast(friendly(x)); }); };
+    ["front", "back"].forEach(function (side) {
+      $("doc-" + side).onchange = function () {
+        var f = this.files && this.files[0];
+        if (!f) return;
+        var pdf = f.type === "application/pdf";
+        if (f.size > (pdf ? 6 : 15) * 1024 * 1024) { toast(pdf ? "PDF muito grande (máx. 6 MB)." : "Imagem muito grande."); return; }
+        toast("Enviando documento…");
+        (pdf ? Promise.resolve(f) : resizeImage(f, 1800)).then(function (blob) {
+          var path = user.id + "/doc-" + (side === "front" ? "frente" : "verso") + "-" + Date.now() + (pdf ? ".pdf" : ".jpg");
+          return sb.storage.from("documentos").upload(path, blob, { contentType: pdf ? "application/pdf" : "image/jpeg", upsert: false }).then(function (r) {
+            if (r.error) throw r.error;
+            var patch = { doc_type: val("dt") || "RG" }; patch[side + "_path"] = path;
+            return saveDoc(patch);
+          });
+        }).then(function () { toast("Documento enviado."); refreshDoc(); }).catch(function (x) { toast(friendly(x)); });
+      };
+    });
+    $("tsp").onchange = function () {
+      var on = this.checked;
+      if ($("msg")) $("msg").innerHTML = "";
+      saveDoc({ terms_version: on ? SPEAKER_TERMS : null }).then(function () { toast(on ? "Termo aceito." : "Aceite retirado."); refreshDoc(); })
+        .catch(function (x) { $("tsp").checked = !on; toast(friendly(x)); });
+    };
+  }
+
   function screenProfile() {
     stopTimer();
     var head = topbar("Meu perfil público");
@@ -661,6 +719,7 @@
         '<div class="card"><label for="vd" style="margin-top:0">Vídeo <span class="opt">(link do YouTube ou Vimeo)</span></label><input id="vd" type="url" inputmode="url" maxlength="300" value="' + e(s.video_url || "") + '" placeholder="https://youtube.com/…">' +
         '<label for="ln">LinkedIn <span class="opt">(opcional)</span></label><input id="ln" type="url" inputmode="url" maxlength="300" value="' + e(s.linkedin || "") + '" placeholder="https://linkedin.com/in/…">' +
         '<label for="ig">Instagram <span class="opt">(opcional)</span></label><input id="ig" maxlength="60" value="' + e(s.instagram || "") + '" placeholder="@seuperfil"></div>' +
+        docCard() +
         '<div id="msg" role="alert"></div><button class="full" id="save">Salvar</button>' +
         (s.status === "draft" || s.status === "rejected" ? '<button class="full spot" type="button" id="submit">Salvar e enviar para análise</button>' : "") +
         "</form>";
@@ -690,6 +749,7 @@
           });
         }).catch(function (err) { toast(friendly(err)); });
       };
+      bindDoc();
       function collect() {
         var catsOn = Array.prototype.map.call($("cats").querySelectorAll("input:checked"), function (i) { return i.value; });
         var formats = [];
@@ -706,6 +766,8 @@
       function save(sendReview) {
         var c = collect(), btn = sendReview ? $("submit") : $("save");
         $("msg").innerHTML = "";
+        if (!c.error && sendReview && !(myDoc && myDoc.front_path)) c.error = "Envie a foto do seu documento (frente) antes de enviar para análise.";
+        if (!c.error && sendReview && !(myDoc && myDoc.terms_version)) c.error = "Marque o aceite do termo do palestrante antes de enviar para análise.";
         if (c.error) { $("msg").innerHTML = '<div class="err">' + e(c.error) + "</div>"; return; }
         if (sendReview) c.data.status = "pending";
         busy(btn, true, "Salvando…");

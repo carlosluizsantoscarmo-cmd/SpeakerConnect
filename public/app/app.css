@@ -172,3 +172,9 @@ nav.bottom a.on .ic{color:var(--brand)}
 
   #toast{bottom:28px;left:calc(50% + 124px)}
 }
+
+/* documento do palestrante */
+.docrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.docrow b{display:block;font-size:14.5px;margin-bottom:4px}
+.doccard select{margin-bottom:6px}
+@media (min-width:900px){ .pform > .card.doccard{grid-column:1 / -1} }

@@ -19,6 +19,7 @@ test/                      testes (servidor e banco)
 - **Devolução:** no painel, **Pagamentos > Devolver** faz o reembolso integral pelo Mercado Pago (o valor sai da conta do palestrante e a comissão volta junto) e cancela o pedido. Como a palestra costuma ser marcada com semanas de antecedência, a cobrança é feita na hora (a reserva no cartão do Resolvo Já dura só alguns dias).
 - **Selo de verificado:** o palestrante aprovado paga pelo app (`VERIFIED_PRICE_CENTS`, hoje R$ 199,00) e o selo vale `VERIFIED_DAYS` dias (hoje 365; use 0 para nunca vencer).
 - O telefone e o e-mail das duas partes só aparecem **depois do pagamento**, para que ninguém feche negócio por fora.
+- **Documento e termo do palestrante:** para enviar o perfil para análise, o palestrante precisa mandar a foto do documento (RG, CNH, RNE ou passaporte) e aceitar o `termo-palestrante.html`. O documento fica na pasta privada `documentos` do Supabase, visível só para ele e para a equipe (painel > Palestrantes > ver frente/verso), e é apagado quando a conta é excluída.
 - O valor cobrado vem sempre do banco de dados, nunca do navegador. O pagamento só é aceito depois de conferido na API do Mercado Pago (valor e moeda).
 
 ## Passo a passo

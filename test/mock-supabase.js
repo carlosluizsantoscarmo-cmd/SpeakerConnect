@@ -29,6 +29,10 @@
       { id: "m1", quote_id: "b0000000-0000-4000-8000-000000000001", sender_id: "a0000000-0000-4000-8000-000000000005", body: "Olá, Ana! Dá para incluir uma dinâmica de 10 minutos?", created_at: iso(2) },
       { id: "m2", quote_id: "b0000000-0000-4000-8000-000000000001", sender_id: "a0000000-0000-4000-8000-000000000001", body: "Dá sim! Já considerei na proposta.", created_at: iso(1) }
     ],
+    speaker_documents: [
+      { speaker_id: "a0000000-0000-4000-8000-000000000001", doc_type: "CNH", front_path: "a0000000-0000-4000-8000-000000000001/doc-frente.jpg", back_path: null, sent_at: iso(20), terms_version: "2026-10-v1", terms_at: iso(20) },
+      { speaker_id: "a0000000-0000-4000-8000-000000000004", doc_type: "RG", front_path: "a0000000-0000-4000-8000-000000000004/doc-frente.jpg", back_path: "a0000000-0000-4000-8000-000000000004/doc-verso.jpg", sent_at: iso(1), terms_version: "2026-10-v1", terms_at: iso(1) }
+    ],
     payments: [
       { id: "c0000000-0000-4000-8000-000000000001", kind: "quote", user_id: "a0000000-0000-4000-8000-000000000005", quote_id: "b0000000-0000-4000-8000-000000000002", speaker_id: "a0000000-0000-4000-8000-000000000003", description: "Palestra: Encontro de líderes - Clara Menezes", amount_cents: 300000, commission_cents: 45000, payout_cents: 255000, status: "paid", mp_payment_id: "1234567", payer_name: "Carla Souza", payer_email: "rh@empresa.com", payout_done_at: null, paid_at: iso(1), created_at: iso(1) },
       { id: "c0000000-0000-4000-8000-000000000002", kind: "verified", user_id: "a0000000-0000-4000-8000-000000000001", speaker_id: "a0000000-0000-4000-8000-000000000001", description: "Selo de palestrante verificado", amount_cents: 9990, commission_cents: 0, payout_cents: 0, status: "paid", mp_payment_id: "7654321", payer_name: "Ana Ribeiro", payer_email: "ana@x.com", paid_at: iso(10), created_at: iso(10) }
@@ -42,7 +46,7 @@
     try { session ? sessionStorage.setItem("__mock_session", JSON.stringify(session)) : sessionStorage.removeItem("__mock_session"); } catch (x) {}
   }
   function uid() { return "d0000000-0000-4000-8000-" + String(Math.floor(Math.random() * 1e12)).padStart(12, "0"); }
-  var pkeys = { categories: "name" };
+  var pkeys = { categories: "name", speaker_documents: "speaker_id" };
 
   function Q(table) {
     this.t = table; this.f = []; this.op = "select"; this.ord = null; this.lim = null; this.mode = null; this.payload = null; this.sel = "*";
@@ -77,6 +81,7 @@
       out = this.payload.map(function (p) {
         var r = Object.assign({ id: uid(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, p);
         if (this.t === "quote_messages" && !r.sender_id) r.sender_id = me;
+        if (this.t === "speaker_documents") { r.sent_at = r.front_path ? new Date().toISOString() : null; r.terms_at = r.terms_version ? new Date().toISOString() : null; }
         if (this.t === "quotes") {
           r.status = r.status || "requested";
           r.company_name = (db.companies.filter(function (c) { return c.id === r.company_id; })[0] || {}).company_name;
@@ -129,6 +134,7 @@
       removeChannel: function () {},
       storage: { from: function () { return {
         upload: function (path) { return Promise.resolve({ data: { path: path }, error: null }); },
+        createSignedUrl: function (path) { return Promise.resolve({ data: { signedUrl: "https://assinado.test/" + path }, error: null }); },
         getPublicUrl: function (path) { return { data: { publicUrl: "https://picsum.photos/seed/" + encodeURIComponent(path) + "/600/700" } }; }
       }; } },
       auth: {
