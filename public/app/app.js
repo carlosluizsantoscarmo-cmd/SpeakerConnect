@@ -781,6 +781,13 @@
   function route() {
     stopPay();
     var p = hashParts();
+    if (p.path === "#/sair") {
+      if (route.leaving) return;
+      route.leaving = true;
+      app.innerHTML = '<p class="boot">Saindo…</p>';
+      sb.auth.signOut().then(function () { location.replace("/"); }, function () { location.replace("/"); });
+      return;
+    }
     if (recovering) return screenNewPassword();
     if (!user) {
       if (p.path === "#/novo-pedido") { try { sessionStorage.setItem("sc_after_login", location.hash); } catch (x) {} return screenAuth("signup", new URLSearchParams("tipo=empresa")); }

@@ -17,6 +17,21 @@
   var CHECK = '<svg class="verified-ic" width="18" height="18" viewBox="0 0 24 24" aria-label="Verificado" role="img"><path fill="currentColor" d="M12 1.5l2.6 1.9 3.2-.2 1 3.1 2.6 1.9-1 3.1 1 3.1-2.6 1.9-1 3.1-3.2-.2L12 22.5l-2.6-1.9-3.2.2-1-3.1L2.6 15.8l1-3.1-1-3.1 2.6-1.9 1-3.1 3.2.2z"/><path d="M8 12.3l2.7 2.7L16.3 9.4" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   window.SCsite = { e: e, brl: brl, sb: sb, ready: ready, verified: verified, CHECK: CHECK };
 
+  // Há alguém logado neste navegador? (o app guarda a sessão do Supabase no localStorage)
+  function loggedIn() {
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (/^sb-.*-auth-token$/.test(k)) {
+          var v = JSON.parse(localStorage.getItem(k) || "null");
+          var exp = v && (v.expires_at || (v.currentSession && v.currentSession.expires_at));
+          if (v && (!exp || exp * 1000 > Date.now() - 7 * 864e5)) return true;
+        }
+      }
+    } catch (x) {}
+    return false;
+  }
+
   // ---------- topo e rodapé ----------
   function chrome() {
     var top = $("#top");
@@ -25,7 +40,7 @@
       top.innerHTML = '<div class="wrap"><a class="logo" href="/" aria-label="SpeakerConnect, página inicial">' + MIC + "SpeakerConnect</a>" +
         '<button class="menu-btn" type="button" aria-expanded="false" aria-controls="menu" aria-label="Abrir menu"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>' +
         '<nav id="menu" aria-label="Principal"><a href="/#palestrantes">Palestrantes</a><a href="/#como-funciona">Como funciona</a><a href="/#para-palestrantes">Para palestrantes</a>' +
-        '<a class="btn spot" href="/app/">Entrar ou cadastrar-se</a></nav></div>';
+        (loggedIn() ? '<a href="/app/#/sair">Sair</a><a class="btn spot" href="/app/">Minha conta</a>' : '<a class="btn spot" href="/app/">Entrar ou cadastrar-se</a>') + "</nav></div>";
       var b = top.querySelector(".menu-btn"), m = top.querySelector("nav");
       b.onclick = function () { var o = m.classList.toggle("open"); b.setAttribute("aria-expanded", o ? "true" : "false"); };
       m.addEventListener("click", function (ev) { if (ev.target.tagName === "A") { m.classList.remove("open"); b.setAttribute("aria-expanded", "false"); } });
