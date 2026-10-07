@@ -5,7 +5,7 @@ window.SC = {
   supabaseUrl: "https://yzixmufoluzgrlxktwln.supabase.co",
   supabaseKey: "sb_publishable_JIYBF0FFu0JX4I1VRH_BCA_EMIh-r_o",
   // WhatsApp de suporte com DDI e DDD, só dígitos (ex.: "5527999999999"). Vazio = o botão não aparece.
-  whatsapp: "",
+  whatsapp: "5527996133207",
   // E-mail de contato mostrado no site.
   email: "contato@speakerconnect.com.br",
   // Mostrados nas páginas (o valor cobrado de verdade é definido no Cloudflare).
