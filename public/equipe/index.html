@@ -99,6 +99,12 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
   function toast(m) { var t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove("show"); }, 3000); }
   function initials(n) { var p = String(n || "?").trim().split(/\s+/); return ((p[0] || "?").charAt(0) + (p.length > 1 ? p[p.length - 1].charAt(0) : "")).toUpperCase(); }
   function verified(s) { return !!(s.verified_until && (s.verified_until === "infinity" || new Date(s.verified_until) > new Date())); }
+  function api(path, body) {
+    return sb.auth.getSession().then(function (r) {
+      var t = r.data && r.data.session && r.data.session.access_token;
+      return fetch(path, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify(body || {}) });
+    }).then(function (res) { return res.json().catch(function () { return {}; }).then(function (d) { if (!res.ok) throw new Error(d.error || "Não foi possível concluir."); return d; }); });
+  }
   function fail(r) { if (r && r.error) { toast("Erro: " + (r.error.message || "não foi possível")); return true; } return false; }
   function ask(title, text, placeholder, okLabel) {
     return new Promise(function (res) {
@@ -220,24 +226,25 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     var p = data.payments, paid = p.filter(function (x) { return x.status === "paid"; });
     var sum = function (arr, k) { return arr.reduce(function (a, x) { return a + (x[k] || 0); }, 0); };
     var quotes = paid.filter(function (x) { return x.kind === "quote"; }), seals = paid.filter(function (x) { return x.kind === "verified"; });
-    var pend = quotes.filter(function (x) { return !x.payout_done_at; });
+    var pend = quotes.filter(function (x) { return !x.payout_done_at && !x.split; });
     var html = '<div class="bar"><h1 class="grow">Pagamentos</h1><button class="ghost" id="exp">Baixar planilha</button></div><div class="stats">' +
       '<div class="stat"><b>' + brl(sum(quotes, "amount_cents")) + "</b><span>Contratações pagas (" + quotes.length + ")</span></div>" +
       '<div class="stat"><b>' + brl(sum(quotes, "commission_cents") + sum(seals, "amount_cents")) + "</b><span>Receita da plataforma (comissões + selos)</span></div>" +
-      '<div class="stat"><b>' + brl(sum(pend, "payout_cents")) + "</b><span>Repasses a fazer (" + pend.length + ")</span></div>" +
+      '<div class="stat"><b>' + brl(sum(quotes, "payout_cents")) + "</b><span>Recebido pelos palestrantes" + (pend.length ? " (" + pend.length + " repasse manual pendente)" : "") + "</span></div>" +
       '<div class="stat"><b>' + seals.length + "</b><span>Selos vendidos</span></div></div>";
     var show = p.filter(function (x) { return x.status !== "pending" || Date.now() - new Date(x.created_at) < 3 * 864e5; });
     if (!show.length) html += '<div class="empty">Nenhum pagamento ainda.</div>';
-    else html += '<div class="scroll"><table><thead><tr><th>Descrição</th><th>Pagante</th><th>Valor</th><th class="hide">Comissão / repasse</th><th>Situação</th><th>Repasse</th></tr></thead><tbody>' + show.map(function (x) {
+    else html += '<div class="scroll"><table><thead><tr><th>Descrição</th><th>Pagante</th><th>Valor</th><th class="hide">Comissão / palestrante</th><th>Situação</th><th>Repasse</th></tr></thead><tbody>' + show.map(function (x) {
       var st = PST[x.status] || [x.status, ""], sp = x.speaker_id && data.prof[x.speaker_id];
       return "<tr><td><b>" + e(x.description || (x.kind === "verified" ? "Selo de verificado" : "Contratação")) + '</b><div class="sub">' + d(x.paid_at || x.created_at) + (x.mp_payment_id ? " · MP " + e(x.mp_payment_id) : "") + "</div></td>" +
         "<td>" + e(x.payer_name || "") + '<div class="sub">' + e(x.payer_email || "") + "</div></td><td>" + brl(x.amount_cents) + "</td>" +
         '<td class="hide">' + (x.kind === "quote" ? brl(x.commission_cents) + ' / <b>' + brl(x.payout_cents) + "</b>" + (sp ? '<div class="sub">para ' + e(sp.name) + (sp.phone ? " · " + e(sp.phone) : "") + "</div>" : "") : "—") + "</td>" +
         '<td><span class="pill ' + st[1] + '">' + st[0] + "</span></td><td>" +
-        (x.kind === "quote" && x.status === "paid" ? (x.payout_done_at ? '<span class="pill ok">Feito ' + d(x.payout_done_at) + '</span>' : '<button class="ok" data-pay="' + x.id + '" style="padding:6px 12px;font-size:13px">Marcar repasse feito</button>') : "—") +
+        (x.kind === "quote" && x.status === "paid" ? (x.split ? '<span class="pill ok">Automático</span>' : x.payout_done_at ? '<span class="pill ok">Feito ' + d(x.payout_done_at) + '</span>' : '<button class="ok" data-pay="' + x.id + '" style="padding:6px 12px;font-size:13px">Marcar repasse feito</button>') : "—") +
+        (x.status === "paid" && x.mp_payment_id ? '<div style="margin-top:6px"><button class="bad" data-refund="' + x.id + '" style="padding:5px 10px;font-size:12.5px">Devolver</button></div>' : "") +
         "</td></tr>";
     }).join("") + "</tbody></table></div>" +
-      '<p style="color:var(--mut);font-size:13.5px;margin-top:12px">Reembolsos são feitos no painel do Mercado Pago; a situação aqui atualiza sozinha quando o Mercado Pago avisa.</p>';
+      '<p style="color:var(--mut);font-size:13.5px;margin-top:12px">Contratações caem direto na conta Mercado Pago do palestrante (Split); a comissão cai na conta da plataforma. O botão Devolver faz o reembolso integral pelo Mercado Pago.</p>';
     main.innerHTML = html;
     main.querySelectorAll("[data-pay]").forEach(function (b) {
       b.onclick = function () {
@@ -246,6 +253,18 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
           if (t === null) return;
           b.disabled = true;
           sb.from("payments").update({ payout_done_at: new Date().toISOString() }).eq("id", x.id).then(function (r) { if (!fail(r)) { toast("Repasse registrado."); refresh(); } });
+        });
+      };
+    });
+    main.querySelectorAll("[data-refund]").forEach(function (b) {
+      b.onclick = function () {
+        var x = data.payments.filter(function (y) { return y.id === b.getAttribute("data-refund"); })[0];
+        var txt = x.kind === "quote" ? "Devolve " + brl(x.amount_cents) + " à empresa pelo Mercado Pago e cancela o pedido. O valor sai da conta do palestrante e a comissão volta junto." : "Devolve " + brl(x.amount_cents) + " ao palestrante e tira o selo.";
+        ask("Devolver o pagamento?", txt, null, "Devolver").then(function (t) {
+          if (t === null) return;
+          b.disabled = true;
+          api("/api/reembolso", { payment_id: x.id }).then(function () { toast("Pagamento devolvido."); refresh(); })
+            .catch(function (err) { b.disabled = false; toast(err.message); });
         });
       };
     });

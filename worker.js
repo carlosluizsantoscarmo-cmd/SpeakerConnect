@@ -3,7 +3,10 @@
 //
 // Endereços:
 //   POST   /api/selo          palestrante aprovado paga o selo de verificado (devolve o link do Mercado Pago)
-//   POST   /api/pagar         empresa paga uma proposta aceita (devolve o link do Mercado Pago)
+//   POST   /api/pagar         empresa paga uma proposta aceita: o valor cai direto na conta Mercado Pago do palestrante (Split)
+//   POST   /api/mp/conectar   palestrante logado: devolve o link para conectar a conta do Mercado Pago (OAuth)
+//   GET    /api/mp-oauth/callback  o Mercado Pago devolve o palestrante aqui; guardamos o token cifrado
+//   POST   /api/reembolso     equipe logada: devolve um pagamento (selo ou contratação)
 //   GET    /api/pagamento     status de um pagamento (página de retorno do Mercado Pago)
 //   POST   /api/mp-webhook    aviso do Mercado Pago (assinatura conferida; o pagamento é consultado na API)
 //   POST   /api/aviso         aviso vindo do Supabase -> e-mail (cabeçalho x-sc-secret)
@@ -12,7 +15,9 @@
 // Variáveis (Settings > Variables and Secrets no Cloudflare):
 //   SUPABASE_URL, SUPABASE_ANON_KEY            (texto)
 //   SUPABASE_SERVICE_ROLE_KEY                  (Secret)  nunca vai para o navegador
-//   MP_ACCESS_TOKEN, MP_WEBHOOK_SECRET         (Secret)  Mercado Pago
+//   MP_ACCESS_TOKEN, MP_WEBHOOK_SECRET         (Secret)  Mercado Pago da plataforma (selo e avisos)
+//   MP_CLIENT_ID, MP_CLIENT_SECRET             (Secret)  da mesma aplicação, para conectar as contas dos palestrantes (Split)
+//   MP_TOKEN_KEY                               (Secret)  senha longa (24+ caracteres) que cifra os tokens dos palestrantes
 //   RESEND_API_KEY (Secret), MAIL_FROM, NOTIFY_EMAIL    e-mails
 //   NOTIFY_SECRET                              (Secret)  mesma senha gravada no Supabase (private.settings)
 //   SITE_URL                                   endereço principal, ex.: https://speakerconnect.com.br
@@ -119,28 +124,31 @@ function later(ctx, p) { if (ctx && ctx.waitUntil) ctx.waitUntil(p); return p; }
 const footer = (env, request) => `\n\nAbrir o ${BRAND}: ${siteUrl(env, request)}/app/\n\nVocê recebe este e-mail porque tem cadastro no ${BRAND}.`;
 
 // ---------- Mercado Pago ----------
-async function createPreference(env, request, { paymentId, title, cents, payer }) {
+// token: o da plataforma (selo) ou o do palestrante (contratação, com marketplace_fee = comissão da plataforma).
+async function createPreference(env, request, { paymentId, title, cents, payer, token, feeCents }) {
   const site = siteUrl(env, request);
   const back = (s) => `${site}/pagamento.html?status=${s}&id=${paymentId}`;
+  const pref = {
+    items: [{ id: paymentId, title: line(title, 120), quantity: 1, currency_id: "BRL", unit_price: cents / 100 }],
+    payer: { name: payer.name, email: payer.email },
+    external_reference: paymentId,
+    back_urls: { success: back("ok"), pending: back("pendente"), failure: back("falhou") },
+    auto_return: "approved",
+    notification_url: site + "/api/mp-webhook",
+    statement_descriptor: "SPEAKERCONNECT",
+  };
+  if (feeCents) pref.marketplace_fee = feeCents / 100;
   const res = await fetch(MP_API + "/checkout/preferences", {
     method: "POST",
-    headers: { Authorization: "Bearer " + env.MP_ACCESS_TOKEN, "Content-Type": "application/json", "X-Idempotency-Key": paymentId },
-    body: JSON.stringify({
-      items: [{ id: paymentId, title: line(title, 120), quantity: 1, currency_id: "BRL", unit_price: cents / 100 }],
-      payer: { name: payer.name, email: payer.email },
-      external_reference: paymentId,
-      back_urls: { success: back("ok"), pending: back("pendente"), failure: back("falhou") },
-      auto_return: "approved",
-      notification_url: site + "/api/mp-webhook",
-      statement_descriptor: "SPEAKERCONNECT",
-    }),
+    headers: { Authorization: "Bearer " + (token || env.MP_ACCESS_TOKEN), "Content-Type": "application/json", "X-Idempotency-Key": paymentId },
+    body: JSON.stringify(pref),
   });
-  const pref = await res.json().catch(() => ({}));
-  if (!res.ok || !pref.init_point) {
-    console.error("Mercado Pago recusou a preferência:", res.status, JSON.stringify(pref).slice(0, 300));
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok || !out.init_point) {
+    console.error("Mercado Pago recusou a preferência:", res.status, JSON.stringify(out).slice(0, 300));
     return null;
   }
-  return pref.init_point;
+  return out.init_point;
 }
 
 export async function mpSignatureValid({ secret, signature, requestId, dataId, now = Date.now() }) {
@@ -157,10 +165,115 @@ export async function mpSignatureValid({ secret, signature, requestId, dataId, n
   return sameSecret(String(parts.v1), expected);
 }
 
-async function fetchPayment(env, id) {
-  const r = await fetch(`${MP_API}/v1/payments/${encodeURIComponent(String(id))}`, { headers: { Authorization: "Bearer " + env.MP_ACCESS_TOKEN } });
+async function fetchPayment(env, id, token) {
+  const r = await fetch(`${MP_API}/v1/payments/${encodeURIComponent(String(id))}`, { headers: { Authorization: "Bearer " + (token || env.MP_ACCESS_TOKEN) } });
   if (!r.ok) throw new Error("status " + r.status);
   return r.json();
+}
+
+// ---------- Split: contas do Mercado Pago dos palestrantes ----------
+const MP_AUTH = "https://auth.mercadopago.com.br/authorization";
+const te = new TextEncoder(), td = new TextDecoder();
+const b64 = (buf) => { let x = ""; for (const c of new Uint8Array(buf)) x += String.fromCharCode(c); return btoa(x); };
+const unb64 = (x) => Uint8Array.from(atob(x), (c) => c.charCodeAt(0));
+const b64u = (buf) => b64(buf).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = (x) => unb64(x.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((x.length + 3) % 4));
+export function splitReady(env) {
+  return !!(env.MP_CLIENT_ID && env.MP_CLIENT_SECRET && env.MP_TOKEN_KEY && String(env.MP_TOKEN_KEY).length >= 24);
+}
+async function aesKey(env) {
+  const raw = await crypto.subtle.digest("SHA-256", te.encode(env.MP_TOKEN_KEY));
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+export async function seal(env, text) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await aesKey(env), te.encode(text));
+  return "v1." + b64(iv) + "." + b64(ct);
+}
+async function unseal(env, x) {
+  const [v, iv, ct] = String(x).split(".");
+  if (v !== "v1" || !iv || !ct) throw new Error("token cifrado inválido");
+  return td.decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(iv) }, await aesKey(env), unb64(ct)));
+}
+async function hmac(secret, data) {
+  const k = await crypto.subtle.importKey("raw", te.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", k, te.encode(data)));
+}
+// "state" do OAuth: assinado e com validade, para ninguém ligar a própria conta ao perfil de outra pessoa.
+export async function makeState(env, userId, now = Date.now()) {
+  const body = b64u(te.encode(JSON.stringify({ u: userId, e: now + 15 * 60 * 1000 })));
+  return body + "." + b64u(await hmac(env.MP_TOKEN_KEY, "state." + body));
+}
+async function readState(env, state) {
+  const [body, sig] = String(state || "").split(".");
+  if (!body || !sig) return null;
+  if (!(await sameSecret(sig, b64u(await hmac(env.MP_TOKEN_KEY, "state." + body))))) return null;
+  try { const o = JSON.parse(td.decode(unb64u(body))); return o.e > Date.now() && UUID.test(o.u) ? o.u : null; } catch { return null; }
+}
+async function oauthToken(env, params) {
+  const r = await fetch(MP_API + "/oauth/token", {
+    method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ client_id: env.MP_CLIENT_ID, client_secret: env.MP_CLIENT_SECRET, ...params }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.access_token) throw new Error("oauth " + r.status + " " + String(d.message || d.error || "").slice(0, 120));
+  return d;
+}
+// Token do palestrante, renovado quando faltam menos de 15 dias para vencer.
+export async function sellerToken(env, speakerId) {
+  if (!splitReady(env) || !UUID.test(String(speakerId || ""))) return null;
+  const acc = await one(env, `/rest/v1/speaker_mp_accounts?speaker_id=eq.${speakerId}&select=*`);
+  if (!acc) return null;
+  let token = await unseal(env, acc.access_token);
+  const exp = acc.expires_at ? Date.parse(acc.expires_at) : 0;
+  if (acc.refresh_token && exp && exp - Date.now() < 15 * 864e5) {
+    try {
+      const d = await oauthToken(env, { grant_type: "refresh_token", refresh_token: await unseal(env, acc.refresh_token) });
+      token = d.access_token;
+      await sb(env, `/rest/v1/speaker_mp_accounts?speaker_id=eq.${speakerId}`, { method: "PATCH", body: {
+        access_token: await seal(env, d.access_token), refresh_token: d.refresh_token ? await seal(env, d.refresh_token) : acc.refresh_token,
+        expires_at: new Date(Date.now() + (d.expires_in || 15552000) * 1000).toISOString(), updated_at: new Date().toISOString() } });
+    } catch (e) { console.error("falha ao renovar o token do palestrante:", e.message); }
+  }
+  return token;
+}
+async function tokenForPayment(env, pay) {
+  return pay && pay.split ? sellerToken(env, pay.speaker_id) : env.MP_ACCESS_TOKEN;
+}
+
+// POST /api/mp/conectar
+async function conectarPost({ request, env }) {
+  if (!configured(env) || !splitReady(env)) return json(503, { error: "O recebimento pelo Mercado Pago ainda não está configurado." });
+  if (!originAllowed(request, env)) return json(403, { error: "Origem não permitida." });
+  const me = await currentUser(request, env);
+  if (!me) return json(401, { error: "Entre na sua conta para continuar." });
+  if (me.profile.role !== "speaker") return json(403, { error: "Só palestrantes conectam uma conta para receber." });
+  const url = new URL(MP_AUTH);
+  url.searchParams.set("client_id", env.MP_CLIENT_ID);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("platform_id", "mp");
+  url.searchParams.set("state", await makeState(env, me.id));
+  url.searchParams.set("redirect_uri", siteUrl(env, request) + "/api/mp-oauth/callback");
+  return json(200, { url: url.toString() });
+}
+
+// GET /api/mp-oauth/callback
+async function oauthCallback({ request, env }) {
+  const site = siteUrl(env, request);
+  const back = (ok) => new Response(null, { status: 302, headers: { Location: site + "/app/#/conta?mp=" + (ok ? "ok" : "erro"), "Cache-Control": "no-store" } });
+  if (!configured(env) || !splitReady(env)) return back(false);
+  const q = new URL(request.url).searchParams;
+  const userId = await readState(env, q.get("state"));
+  if (!userId || !q.get("code")) return back(false);
+  try {
+    const d = await oauthToken(env, { grant_type: "authorization_code", code: q.get("code"), redirect_uri: site + "/api/mp-oauth/callback" });
+    await sb(env, "/rest/v1/speaker_mp_accounts?on_conflict=speaker_id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: {
+      speaker_id: userId, mp_user_id: String(d.user_id), access_token: await seal(env, d.access_token),
+      refresh_token: d.refresh_token ? await seal(env, d.refresh_token) : null,
+      expires_at: new Date(Date.now() + (d.expires_in || 15552000) * 1000).toISOString(),
+      connected_at: new Date().toISOString(), updated_at: new Date().toISOString() } });
+    return back(true);
+  } catch (e) { console.error("conexão com o Mercado Pago falhou:", e.message); return back(false); }
 }
 
 async function readBody(request, max = 4000) {
@@ -204,7 +317,7 @@ export function split(amountCents, pct) {
 }
 
 async function pagarPost({ request, env }) {
-  if (!configured(env) || !env.MP_ACCESS_TOKEN) return json(503, { error: "O pagamento ainda não está configurado." });
+  if (!configured(env) || !splitReady(env)) return json(503, { error: "O pagamento ainda não está configurado." });
   if (!originAllowed(request, env)) return json(403, { error: "Origem não permitida." });
   const b = await readBody(request);
   if (!b || !UUID.test(String(b.quote_id || ""))) return json(400, { error: "Pedido inválido." });
@@ -215,15 +328,20 @@ async function pagarPost({ request, env }) {
   if (q.status === "paid" || q.status === "done") return json(400, { error: "Este pedido já foi pago." });
   if (q.status !== "accepted" || !(q.amount_cents > 0)) return json(400, { error: "Aceite a proposta antes de pagar." });
 
+  const sellerTok = await sellerToken(env, q.speaker_id);
+  if (!sellerTok) return json(409, { error: "O palestrante ainda não conectou a conta do Mercado Pago para receber. Avisamos a equipe; tente de novo mais tarde.", code: "speaker_not_connected" });
+  const acc = await one(env, `/rest/v1/speaker_mp_accounts?speaker_id=eq.${q.speaker_id}&select=mp_user_id`);
   const { commission, payout } = split(q.amount_cents, env.COMMISSION_PCT);
   const title = `Palestra: ${line(q.title, 60)} - ${line(q.speaker_name, 40)}`;
   const rows = await sb(env, "/rest/v1/payments", {
     method: "POST", prefer: "return=representation",
     body: { kind: "quote", user_id: me.id, quote_id: q.id, speaker_id: q.speaker_id, description: title, amount_cents: q.amount_cents,
-            commission_cents: commission, payout_cents: payout, payer_name: me.profile.name, payer_email: me.email },
+            commission_cents: commission, payout_cents: payout, payer_name: me.profile.name, payer_email: me.email,
+            split: true, mp_seller_id: acc ? acc.mp_user_id : null },
   });
   const pay = rows[0];
-  const url = await createPreference(env, request, { paymentId: pay.id, title, cents: q.amount_cents, payer: { name: me.profile.name, email: me.email } });
+  const url = await createPreference(env, request, { paymentId: pay.id, title, cents: q.amount_cents, payer: { name: me.profile.name, email: me.email },
+    token: sellerTok, feeCents: commission });
   if (!url) return json(502, { error: "O Mercado Pago não respondeu. Tente de novo em instantes." });
   return json(200, { id: pay.id, url });
 }
@@ -246,6 +364,7 @@ export async function applyPayment(env, request, mp, ctx) {
     firstTime = pay.status !== "paid";
     patch.status = "paid";
     patch.paid_at = pay.paid_at || new Date().toISOString();
+    if (pay.split && !pay.payout_done_at) patch.payout_done_at = patch.paid_at; // Split: o valor já caiu na conta do palestrante
   } else if (pay.status !== "paid") {
     patch.status = String(mp.status || "pending");
   } else if (mp.status === "refunded" || mp.status === "charged_back") {
@@ -254,6 +373,9 @@ export async function applyPayment(env, request, mp, ctx) {
   }
   await sb(env, `/rest/v1/payments?id=eq.${pay.id}`, { method: "PATCH", body: patch });
   const status = patch.status || pay.status;
+  if (pay.kind === "quote" && pay.quote_id && (patch.status === "refunded" || patch.status === "charged_back") && pay.status !== patch.status) {
+    await sb(env, `/rest/v1/quotes?id=eq.${pay.quote_id}`, { method: "PATCH", body: { status: "cancelled" } });
+  }
 
   if (firstTime) {
     if (pay.kind === "verified" && pay.speaker_id) {
@@ -278,14 +400,17 @@ export async function applyPayment(env, request, mp, ctx) {
       const titulo = q ? line(q.title, 120) : pay.description;
       later(ctx, sendMail(env, { to: env.NOTIFY_EMAIL, subject: `Contratação paga: ${brl(pay.amount_cents)} - ${titulo}`,
         text: `Evento: ${titulo}\nEmpresa: ${q && q.company_name} (${pay.payer_email})\nPalestrante: ${q && q.speaker_name}\n` +
-              `Valor pago: ${brl(pay.amount_cents)}\nComissão: ${brl(pay.commission_cents)}\nRepasse ao palestrante: ${brl(pay.payout_cents)}\n` +
-              `Pagamento no Mercado Pago: ${mp.id}\n\nQuando fizer o repasse, marque em ${siteUrl(env, request)}/equipe/ > Pagamentos.` }));
+              `Valor pago: ${brl(pay.amount_cents)}\nComissão da plataforma: ${brl(pay.commission_cents)}\nPalestrante recebe: ${brl(pay.payout_cents)}` +
+              (pay.split ? " (direto na conta Mercado Pago dele)" : "") + `\nPagamento no Mercado Pago: ${mp.id}` +
+              (pay.split ? "" : `\n\nQuando fizer o repasse, marque em ${siteUrl(env, request)}/equipe/ > Pagamentos.`) }));
       later(ctx, sendMail(env, { to: pay.payer_email, subject: `Pagamento confirmado: ${titulo}`,
         text: `Olá, ${first(pay.payer_name)}!\n\nRecebemos o pagamento de ${brl(pay.amount_cents)} pela palestra "${titulo}" com ${q && q.speaker_name}.` +
               `\nO contato direto do palestrante já está liberado no app, na página do pedido.` + footer(env, request) }));
       if (sp) later(ctx, sendMail(env, { to: sp.email, subject: `Palestra confirmada: ${titulo}`,
         text: `Olá, ${first(sp.name)}!\n\n${q.company_name} pagou a palestra "${titulo}"${q.event_date ? " (" + q.event_date.split("-").reverse().join("/") + ")" : ""}.` +
-              `\nValor do seu repasse: ${brl(pay.payout_cents)} (valor da proposta menos a comissão da plataforma).` +
+              (pay.split
+                ? `\nVocê recebe ${brl(pay.payout_cents)} (valor da proposta menos a comissão da plataforma) direto na sua conta do Mercado Pago, no prazo de liberação da sua conta.`
+                : `\nValor do seu repasse: ${brl(pay.payout_cents)} (valor da proposta menos a comissão da plataforma).`) +
               `\nO contato da empresa já está liberado no app, na página do pedido.` + footer(env, request) }));
     }
   }
@@ -306,7 +431,14 @@ async function mpWebhook({ request, env, ctx }) {
   if (!valid) { console.error("webhook: assinatura inválida", JSON.stringify({ dataId: dataId ? String(dataId) : null, type })); return json(401, { error: "assinatura inválida" }); }
   if (type !== "payment") return json(200, { ok: true, ignorado: true });
   try {
-    const mp = await fetchPayment(env, dataId);
+    // Pagamento de contratação pertence à conta do palestrante: o aviso traz o user_id dele.
+    let token = env.MP_ACCESS_TOKEN;
+    const sellerId = body && body.user_id != null ? String(body.user_id) : "";
+    if (/^\d{3,20}$/.test(sellerId)) {
+      const acc = await one(env, `/rest/v1/speaker_mp_accounts?mp_user_id=eq.${sellerId}&select=speaker_id`);
+      if (acc) token = (await sellerToken(env, acc.speaker_id)) || token;
+    }
+    const mp = await fetchPayment(env, dataId, token);
     const r = await applyPayment(env, request, mp, ctx);
     console.log("webhook", JSON.stringify({ dataId: String(dataId), mpStatus: mp.status, resultado: r.reason }));
   } catch (e) {
@@ -322,14 +454,14 @@ async function pagamentoGet({ request, env, ctx }) {
   const q = new URL(request.url).searchParams;
   const id = q.get("id") || "";
   if (!UUID.test(id)) return json(400, { error: "Pagamento inválido." });
-  const pay = await one(env, `/rest/v1/payments?id=eq.${id}&select=id,kind,status`);
+  const pay = await one(env, `/rest/v1/payments?id=eq.${id}&select=id,kind,status,split,speaker_id`);
   if (!pay) return json(404, { error: "Pagamento não encontrado." });
   let status = pay.status;
   // Na volta do Mercado Pago a URL traz payment_id: confirmamos direto na API (o navegador não decide nada).
   const pid = q.get("payment_id") || "";
   if (status !== "paid" && /^\d{5,20}$/.test(pid) && env.MP_ACCESS_TOKEN) {
     try {
-      const mp = await fetchPayment(env, pid);
+      const mp = await fetchPayment(env, pid, await tokenForPayment(env, pay));
       if (String(mp.external_reference) === id) {
         const r = await applyPayment(env, request, mp, ctx);
         if (r.status) status = r.status;
@@ -424,6 +556,33 @@ async function avisoPost({ request, env, ctx }) {
   return json(200, { ok: true, enviados: msgs.length });
 }
 
+// ---------- POST /api/reembolso (equipe) ----------
+async function reembolsoPost({ request, env }) {
+  if (!configured(env) || !env.MP_ACCESS_TOKEN) return json(503, { error: "Pagamento não configurado." });
+  if (!originAllowed(request, env)) return json(403, { error: "Origem não permitida." });
+  const me = await currentUser(request, env);
+  if (!me || me.profile.role !== "admin") return json(403, { error: "Só a equipe pode devolver pagamentos." });
+  const b = await readBody(request);
+  if (!b || !UUID.test(String(b.payment_id || ""))) return json(400, { error: "Pagamento inválido." });
+  const pay = await one(env, `/rest/v1/payments?id=eq.${b.payment_id}&select=*`);
+  if (!pay || !pay.mp_payment_id) return json(404, { error: "Pagamento não encontrado." });
+  if (pay.status !== "paid") return json(400, { error: "Só pagamentos confirmados podem ser devolvidos." });
+  const token = await tokenForPayment(env, pay);
+  if (!token) return json(409, { error: "A conta do palestrante não está mais conectada. Faça a devolução pelo painel do Mercado Pago." });
+  const r = await fetch(`${MP_API}/v1/payments/${encodeURIComponent(pay.mp_payment_id)}/refunds`, {
+    method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json", "X-Idempotency-Key": "sc-refund-" + pay.id }, body: "{}",
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    console.error("reembolso recusado:", r.status, JSON.stringify(d).slice(0, 200));
+    return json(502, { error: "O Mercado Pago recusou a devolução" + (d && d.message ? ": " + line(d.message, 120) : ".") });
+  }
+  await sb(env, `/rest/v1/payments?id=eq.${pay.id}`, { method: "PATCH", body: { status: "refunded", refunded_at: new Date().toISOString() } });
+  if (pay.kind === "quote" && pay.quote_id) await sb(env, `/rest/v1/quotes?id=eq.${pay.quote_id}`, { method: "PATCH", body: { status: "cancelled" } });
+  if (pay.kind === "verified" && pay.speaker_id) await sb(env, `/rest/v1/speakers?id=eq.${pay.speaker_id}`, { method: "PATCH", body: { verified_until: null } });
+  return json(200, { ok: true });
+}
+
 // ---------- DELETE /api/conta ----------
 async function contaDelete({ request, env }) {
   if (!configured(env)) return json(503, { error: "Servidor não configurado." });
@@ -448,6 +607,9 @@ const routes = {
   "/api/mp-webhook": { POST: mpWebhook },
   "/api/aviso": { POST: avisoPost },
   "/api/conta": { DELETE: contaDelete },
+  "/api/mp/conectar": { POST: conectarPost },
+  "/api/mp-oauth/callback": { GET: oauthCallback },
+  "/api/reembolso": { POST: reembolsoPost },
 };
 
 export default {

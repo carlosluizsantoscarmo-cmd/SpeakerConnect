@@ -6,7 +6,7 @@
   var C = window.SC || {};
   var app = document.getElementById("app");
   var TERMS = "2026-10-v1";
-  var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false;
+  var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false, mpConn = null;
 
   // ---------- utilidades ----------
   function e(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -249,6 +249,26 @@
     }
     return '<div class="card"><h3>Selo de palestrante verificado</h3><p class="muted small" style="margin:4px 0 0">Apareça primeiro na busca e ganhe a marca de verificado no seu perfil.' + (C.verifiedPrice ? " " + e(C.verifiedPrice) + "." : "") + '</p><button class="full spot" id="selo" type="button">Ativar o selo</button><div id="selomsg" role="alert"></div></div>';
   }
+  // ---------- recebimento pelo Mercado Pago (Split) ----------
+  function loadMpConn() {
+    if (!profile || profile.role !== "speaker") return Promise.resolve(null);
+    return sb.rpc("mp_connected", { sid: user.id }).then(function (r) { mpConn = !r.error && r.data === true; return mpConn; }).catch(function () { return mpConn; });
+  }
+  function mpCard() {
+    if (mpConn) return '<div class="card"><span class="pill ok">Recebimento ativo</span><p class="muted small" style="margin:8px 0 0">Os pagamentos das empresas caem direto na sua conta do Mercado Pago, já descontada a comissão da plataforma.</p></div>';
+    return '<div class="card"><h3>Receba pelo Mercado Pago</h3><p class="muted small" style="margin:4px 0 0">Conecte sua conta para as empresas conseguirem pagar. O valor cai direto para você, já descontada a comissão de ' + (Number(C.commissionPct) || 0) + '%. Se não tiver conta, dá para criar na hora, de graça.</p>' +
+      '<button class="full" id="mpc" type="button">Conectar minha conta do Mercado Pago</button><div id="mpcmsg" role="alert"></div></div>';
+  }
+  function bindMp() {
+    var b = $("mpc");
+    if (!b) return;
+    b.onclick = function () {
+      busy(b, true, "Abrindo o Mercado Pago…");
+      api("/api/mp/conectar", "POST", {}).then(function (d) { location.href = d.url; }).catch(function (err) {
+        busy(b, false); var m = $("mpcmsg"); if (m) m.innerHTML = '<div class="err">' + e(err.message) + "</div>";
+      });
+    };
+  }
   function bindSelo() {
     var b = $("selo");
     if (!b) return;
@@ -266,11 +286,13 @@
       (profile.role === "speaker" ? "Seus palcos começam aqui" : "Encontre o palestrante do seu próximo evento") + "</h1>" +
       (profile.role === "company" ? '<a class="btn spot full" href="/#palestrantes">' + icon("search", 18) + "Ver palestrantes</a>" : "") + "</div>";
     shell('<p class="boot" style="padding:30px 0">Carregando…</p>', "home", head);
-    myQuotes().then(function (qs) {
+    Promise.all([myQuotes(), loadMpConn()]).then(function (res) {
+      var qs = res[0];
       var open = qs.filter(function (q) { return ["requested", "proposed", "accepted"].indexOf(q.status) > -1; });
       var html = "";
       if (profile.role === "speaker") {
         html += speakerStatusCard();
+        if (me && me.status !== "draft" && me.status !== "rejected") html += mpCard();
         var todo = qs.filter(function (q) { return q.status === "requested"; });
         html += "<h2>" + (todo.length ? "Pedidos para responder" : "Pedidos recentes") + "</h2>";
         var list = todo.length ? todo : qs.slice(0, 5);
@@ -284,7 +306,7 @@
       }
       html += supportCard();
       shell(html, "home", head);
-      bindSelo();
+      bindSelo(); bindMp();
     }).catch(function (err) { shell('<div class="err">' + e(friendly(err)) + "</div>", "home", head); });
   }
 
@@ -376,7 +398,8 @@
     function load() {
       return Promise.all([
         sb.from("quotes").select("*").eq("id", id).maybeSingle(),
-        sb.from("quote_messages").select("*").eq("quote_id", id).order("created_at").limit(300)
+        sb.from("quote_messages").select("*").eq("quote_id", id).order("created_at").limit(300),
+        sp ? loadMpConn() : null
       ]);
     }
     function render(res) {
@@ -395,7 +418,8 @@
           (Q.speaker_note ? '<p class="small" style="margin:6px 0 0;white-space:pre-wrap">' + e(Q.speaker_note) + "</p>" : "");
         if (sp && pct) {
           var com = Math.round(Q.amount_cents * pct / 100);
-          html += '<div class="split"><span class="muted">Comissão da plataforma (' + pct + '%)</span><span>− ' + brl(com) + '</span><span class="tot">Você recebe</span><span class="tot">' + brl(Q.amount_cents - com) + "</span></div>";
+          html += '<div class="split"><span class="muted">Comissão da plataforma (' + pct + '%)</span><span>− ' + brl(com) + '</span><span class="tot">Você recebe</span><span class="tot">' + brl(Q.amount_cents - com) + "</span></div>" +
+            '<p class="hint" style="margin-top:8px">Direto na sua conta do Mercado Pago, quando a empresa pagar.</p>';
         }
         html += "</div>";
       } else if (Q.status === "declined" && Q.speaker_note) {
@@ -408,7 +432,10 @@
           '<label for="am">Valor total da palestra</label><input id="am" inputmode="decimal" placeholder="Ex.: 4.500,00" value="' + (Q.amount_cents ? (Q.amount_cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "") + '">' +
           '<p class="hint">Inclua deslocamento e materiais, se houver. A comissão de ' + pct + "% é descontada desse valor.</p>" +
           '<label for="nt">Observações <span class="opt">(o que está incluso)</span></label><textarea id="nt" maxlength="1000">' + e(Q.speaker_note || "") + "</textarea>" +
-          '<div id="pmsg" role="alert"></div><button class="full" id="psend">Enviar proposta</button><button class="full danger" type="button" id="pdecl">Não posso atender</button></form>';
+          '<div id="pmsg" role="alert"></div>' +
+          (mpConn ? '<button class="full" id="psend">Enviar proposta</button>'
+                  : '<div class="err">Antes de enviar a proposta, conecte sua conta do Mercado Pago. É nela que você recebe o pagamento da empresa.</div><button class="full" id="mpc" type="button">Conectar minha conta do Mercado Pago</button>') +
+          '<button class="full danger" type="button" id="pdecl">Não posso atender</button></form>';
       }
       if (!sp && Q.status === "proposed") html += '<button class="full" id="acc" type="button">Aceitar proposta de ' + brl(Q.amount_cents) + "</button>";
       if (!sp && Q.status === "accepted") html += '<div class="card dark"><h3>Proposta aceita</h3><p class="muted small" style="margin:4px 0 12px">Pague por Pix ou cartão pelo Mercado Pago. Assim que o pagamento for confirmado, liberamos o contato do palestrante.</p><button class="full spot" id="pay" type="button" style="margin:0">Pagar ' + brl(Q.amount_cents) + '</button><div id="paymsg" role="alert"></div></div>';
@@ -438,9 +465,11 @@
       });
     }
     function bind(Q) {
+      bindMp();
       if ($("pf")) {
         $("pf").onsubmit = function (ev) {
           ev.preventDefault();
+          if (!mpConn) return;
           var cents = parseBrl(val("am"));
           if (!(cents >= 100)) { $("pmsg").innerHTML = '<div class="err">Informe o valor. Ex.: 4.500,00</div>'; return; }
           busy($("psend"), true);
@@ -611,13 +640,17 @@
         '<div class="row"><div style="flex:2"><label for="ci">Cidade</label><input id="ci" maxlength="60" value="' + e(c.city || "") + '"></div><div><label for="uf">UF</label>' + ufSelect("uf", c.uf) + "</div></div>" +
         '<label for="ws">Site <span class="opt">(opcional)</span></label><input id="ws" maxlength="200" value="' + e(c.website || "") + '">' : "") +
       '<div id="msg" role="alert"></div><button class="full" id="save">Salvar</button></form>';
-    if (profile.role === "speaker") html += seloCard();
+    if (profile.role === "speaker") html += '<div id="mpbox"></div>' + seloCard();
     html += supportCard();
     html += '<button class="full ghost" id="out" type="button">Sair</button>' +
       '<button class="full linkbtn" id="del" type="button" style="color:var(--err)!important">Apagar minha conta</button>' +
       '<p class="center small muted" style="margin-top:14px"><a href="/termos.html">Termos</a> · <a href="/privacidade.html">Privacidade</a></p>';
     shell(html, "conta", head);
     bindSelo();
+    var back = hashParts().q.get("mp");
+    if (back === "ok") toast("Conta do Mercado Pago conectada.");
+    if (back === "erro") toast("Não foi possível conectar a conta. Tente de novo.");
+    if (profile.role === "speaker") loadMpConn().then(function () { var bx = $("mpbox"); if (bx) { bx.innerHTML = mpCard(); bindMp(); } });
     $("f").onsubmit = function (ev) {
       ev.preventDefault();
       var btn = $("save"), ph = val("ph").replace(/\D/g, ""), cj = co ? val("cj").replace(/\D/g, "") : "";

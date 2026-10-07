@@ -520,6 +520,32 @@ drop trigger if exists on_message on public.quote_messages;
 create trigger on_message after insert on public.quote_messages
   for each row execute function private.on_message();
 
+-- ---------- Mercado Pago dos palestrantes (Split) ----------
+-- O palestrante conecta a conta dele; o pagamento da empresa cai direto lá e a plataforma recebe só a comissão.
+-- Os tokens ficam cifrados pelo servidor e só o servidor (service_role) lê esta tabela.
+create table if not exists public.speaker_mp_accounts (
+  speaker_id    uuid primary key references public.speakers(id) on delete cascade,
+  mp_user_id    text not null,
+  access_token  text not null,
+  refresh_token text,
+  expires_at    timestamptz,
+  connected_at  timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+alter table public.speaker_mp_accounts enable row level security;
+revoke all on public.speaker_mp_accounts from anon, authenticated;
+
+alter table public.payments add column if not exists split boolean not null default false;
+alter table public.payments add column if not exists mp_seller_id text;
+
+-- Diz só se o palestrante já conectou a conta (sem mostrar nada da conta).
+create or replace function public.mp_connected(sid uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.speaker_mp_accounts where speaker_id = sid);
+$$;
+revoke all on function public.mp_connected(uuid) from public, anon;
+grant execute on function public.mp_connected(uuid) to authenticated;
+
 -- ---------- fotos dos palestrantes (Storage) ----------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('fotos', 'fotos', true, 3145728, array['image/jpeg', 'image/png', 'image/webp'])

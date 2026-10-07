@@ -165,6 +165,26 @@ set role authenticated; select set_config('request.jwt.claim.sub', '00000000-000
 select tst.ok('equipe marca repasse feito', $$update payments set payout_done_at=now()$$);
 reset role;
 
+-- ---------- Split: contas do Mercado Pago ----------
+set role service_role; select set_config('request.jwt.claim.role', 'service_role', false);
+select tst.ok('servidor guarda conta MP', $$insert into speaker_mp_accounts(speaker_id, mp_user_id, access_token) values ('00000000-0000-0000-0000-000000000001','123','v1.cifrado')$$);
+select set_config('request.jwt.claim.role', '', false);
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000001', false);
+select tst.no('palestrante não lê o token guardado', $$select * from speaker_mp_accounts$$);
+select tst.no('palestrante não troca a conta por SQL', $$insert into speaker_mp_accounts(speaker_id, mp_user_id, access_token) values (auth.uid(),'999','x')$$);
+select tst.no('palestrante não marca pagamento como split', $$update payments set split = true$$);
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000004', false);
+select tst.eq('empresa sabe se o palestrante conectou', $$select mp_connected('00000000-0000-0000-0000-000000000001')::text$$, 'true');
+select tst.eq('e se não conectou', $$select mp_connected('00000000-0000-0000-0000-000000000002')::text$$, 'false');
+select tst.no('outra empresa não lê tokens', $$select * from speaker_mp_accounts$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+set role anon;
+select tst.no('visitante não consulta conexão', $$select mp_connected('00000000-0000-0000-0000-000000000001')$$);
+reset role;
+
 -- ---------- exclusão de conta mantém o registro financeiro ----------
 delete from auth.users where id = '00000000-0000-0000-0000-000000000003';
 select tst.eq('pagamento fica guardado após excluir conta', $$select count(*)::text from payments$$, '1');

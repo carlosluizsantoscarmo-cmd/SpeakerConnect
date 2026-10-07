@@ -15,7 +15,8 @@ test/                      testes (servidor e banco)
 
 ## Como funciona o dinheiro
 
-- **Contratação:** a empresa pede orçamento, o palestrante envia o valor, a empresa aceita e paga pelo Mercado Pago. A plataforma fica com a comissão (`COMMISSION_PCT`, hoje 20%) e repassa o restante ao palestrante. Os repasses são feitos por você (Pix) e marcados no painel em **Pagamentos > Marcar repasse feito**.
+- **Contratação (Split, como no Resolvo Já):** o palestrante conecta a conta dele do Mercado Pago no app. A empresa paga e o valor cai **direto na conta do palestrante**; o Mercado Pago separa sozinho a comissão da plataforma (`COMMISSION_PCT`, hoje 20%) e manda para a conta do SpeakerConnect. Não há repasse manual, e a plataforma só fatura a comissão. Sem a conta conectada, o palestrante não consegue enviar proposta.
+- **Devolução:** no painel, **Pagamentos > Devolver** faz o reembolso integral pelo Mercado Pago (o valor sai da conta do palestrante e a comissão volta junto) e cancela o pedido. Como a palestra costuma ser marcada com semanas de antecedência, a cobrança é feita na hora (a reserva no cartão do Resolvo Já dura só alguns dias).
 - **Selo de verificado:** o palestrante aprovado paga pelo app (`VERIFIED_PRICE_CENTS`, hoje R$ 199,00) e o selo vale `VERIFIED_DAYS` dias (hoje 365; use 0 para nunca vencer).
 - O telefone e o e-mail das duas partes só aparecem **depois do pagamento**, para que ninguém feche negócio por fora.
 - O valor cobrado vem sempre do banco de dados, nunca do navegador. O pagamento só é aceito depois de conferido na API do Mercado Pago (valor e moeda).
@@ -40,15 +41,20 @@ No GitHub, clique no arquivo e no lápis (editar):
 1. **Workers & Pages > Create > Import a repository** e escolha `SpeakerConnect`. Build vazio; deploy `npx wrangler deploy`.
 2. Depois do primeiro deploy, em **Settings > Variables and Secrets**, adicione como **Secret**:
    - `SUPABASE_SERVICE_ROLE_KEY` (chave secreta do Supabase)
-   - `MP_ACCESS_TOKEN` (Access Token de produção do Mercado Pago, o **novo**, renovado)
+   - `MP_ACCESS_TOKEN` (Access Token de produção da aplicação do Mercado Pago)
+   - `MP_CLIENT_ID` e `MP_CLIENT_SECRET` (da mesma aplicação, passo 4)
+   - `MP_TOKEN_KEY` (invente uma senha com 32 caracteres ou mais; ela cifra as contas dos palestrantes. Não troque depois, senão os palestrantes precisam conectar de novo)
    - `MP_WEBHOOK_SECRET` (passo 4)
    - `RESEND_API_KEY`
    - `NOTIFY_SECRET` (invente uma senha com 20 caracteres ou mais)
 3. **Domínio:** em **Settings > Domains & Routes > Add > Custom domain**, adicione o domínio e o `www`, como fizemos no Resolvo Já.
 
 ### 4. Mercado Pago
-1. Em **Suas integrações > sua aplicação > Webhooks**, configure o modo produtivo com a URL `https://SEU-DOMINIO/api/mp-webhook` e marque o evento **Pagamentos**.
-2. Copie a **assinatura secreta** gerada e salve no Cloudflare como `MP_WEBHOOK_SECRET`.
+1. Em **mercadopago.com.br/developers > Suas integrações > Criar aplicação**: nome `SpeakerConnect`, pagamentos online, desenvolvimento próprio, produto **Checkout Pro**. Se perguntar se é marketplace, responda **sim** (o Split depende disso).
+2. Em **Credenciais de produção**, copie o **Access Token** (`MP_ACCESS_TOKEN`), o **Client ID** (`MP_CLIENT_ID`) e o **Client Secret** (`MP_CLIENT_SECRET`) para o Cloudflare.
+3. Em **Editar aplicação** (ou **Configurações > OAuth / URLs de redirecionamento**), adicione a URL `https://SEU-DOMINIO/api/mp-oauth/callback`. É para onde o palestrante volta depois de conectar a conta.
+4. Em **Webhooks > Configurar notificações**, no modo produtivo, use a URL `https://SEU-DOMINIO/api/mp-webhook` e marque o evento **Pagamentos**.
+5. Copie a **assinatura secreta** gerada e salve no Cloudflare como `MP_WEBHOOK_SECRET`.
 
 ### 5. Ligar os avisos por e-mail
 No Supabase, **SQL Editor**, rode (com o seu domínio e a mesma senha do `NOTIFY_SECRET`):
@@ -68,8 +74,8 @@ insert into private.settings values ('notify_secret', 'A-MESMA-SENHA-DO-NOTIFY_S
 1. Crie uma conta de **palestrante** (outro e-mail), preencha o perfil e envie para análise. Você deve receber o e-mail "Perfil para aprovar".
 2. No painel, aprove. O perfil aparece no site.
 3. Crie uma conta de **empresa**, abra o perfil no site e peça um orçamento. O palestrante recebe o e-mail.
-4. Como palestrante, envie uma proposta de R$ 5,00. Como empresa, aceite e pague de verdade (Pix).
-5. Confira: o pedido vira "Contratado", os contatos aparecem e o pagamento entra no painel com comissão e repasse. Depois, reembolse pelo Mercado Pago.
+4. Como palestrante, conecte a conta do Mercado Pago (use uma conta **diferente** da conta da plataforma; o Mercado Pago não deixa pagar e receber na mesma conta) e envie uma proposta de R$ 5,00. Como empresa, aceite e pague de verdade por Pix, também com uma conta diferente.
+5. Confira: o pedido vira "Contratado", os contatos aparecem, o valor menos a comissão entra na conta do palestrante e a comissão na conta da plataforma. Depois, use **Devolver** no painel.
 
 ## Segurança: o que mudou em relação ao site do Horizons
 - Login do próprio Supabase (senhas nunca passam pelo navegador em texto, nem ficam numa tabela aberta).
