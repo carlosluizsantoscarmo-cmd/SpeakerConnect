@@ -85,7 +85,7 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
 <dialog id="dlg"><form method="dialog" id="dlgf"><h3 id="dlgt" style="margin:0 0 4px"></h3><p id="dlgp" style="color:var(--mut);margin:0"></p><textarea id="dlgx" maxlength="600"></textarea>
   <div class="acts" style="justify-content:flex-end"><button value="cancel" class="ghost" type="submit">Voltar</button><button value="ok" id="dlgok" type="submit">Confirmar</button></div></form></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2"></script>
 <script src="/config.js"></script>
 <script>
 (function () {
@@ -121,13 +121,31 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })); a.download = name; a.click();
   }
 
+  // ---------- Face ID / digital (passkeys) ----------
+  function pkOk() { return !!(window.PublicKeyCredential && navigator.credentials && sb && sb.auth && typeof sb.auth.signInWithPasskey === "function"); }
+  function pkMsg(err) {
+    var m = String((err && (err.name || "") + " " + (err.message || err.code || "")) || err || "");
+    if (/NotAllowed|abort|cancel|timed? ?out/i.test(m)) return "Entrada cancelada.";
+    if (/not enabled|disabled|not available/i.test(m)) return "Face ID ainda não ativado no Supabase. Entre com e-mail e senha.";
+    if (/not found|no credential|unknown credential/i.test(m)) return "Este aparelho não tem Face ID cadastrado. Entre com a senha e toque em \u201cAtivar Face ID\u201d no topo do painel.";
+    return m.trim() || "Não foi possível entrar.";
+  }
+
   // ---------- login ----------
   function screenLogin(msg) {
     $("tabs").hidden = true; $("who").innerHTML = "";
     main.innerHTML = '<form class="login" id="f"><h1>Área da equipe</h1><p style="color:var(--mut);margin:6px 0 0">Entre com a conta de administrador do app.</p>' +
       '<label for="em">E-mail</label><input id="em" type="email" autocomplete="email"><label for="pw">Senha</label><input id="pw" type="password" autocomplete="current-password">' +
       (msg ? '<div class="err">' + e(msg) + "</div>" : "") + '<button style="width:100%;justify-content:center;margin-top:16px" id="go">Entrar</button>' +
+      (pkOk() ? '<button type="button" class="ghost" style="width:100%;justify-content:center;margin-top:10px" id="pk">Entrar com Face ID ou digital</button>' : "") +
       '<p style="font-size:13.5px;color:var(--mut);margin:14px 0 0">Esqueceu a senha? Use "Esqueci minha senha" no <a href="/app/">app</a>.</p></form>';
+    if ($("pk")) $("pk").onclick = function () {
+      var b = this; b.disabled = true;
+      sb.auth.signInWithPasskey().then(function (r) {
+        b.disabled = false;
+        if (r && r.error) screenLogin(pkMsg(r.error));
+      }, function (err) { b.disabled = false; screenLogin(pkMsg(err)); });
+    };
     $("f").onsubmit = function (ev) {
       ev.preventDefault(); $("go").disabled = true;
       sb.auth.signInWithPassword({ email: $("em").value.trim(), password: $("pw").value }).then(function (r) {
@@ -352,15 +370,23 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
         return;
       }
       $("tabs").hidden = false;
-      $("who").innerHTML = e(r.data.name) + ' <button class="ghost" id="out" style="padding:6px 12px;font-size:13px">Sair</button>';
+      $("who").innerHTML = e(r.data.name) + (pkOk() ? ' <button class="ghost" id="pkadd" style="padding:6px 12px;font-size:13px">Ativar Face ID</button>' : "") + ' <button class="ghost" id="out" style="padding:6px 12px;font-size:13px">Sair</button>';
       $("out").onclick = function () { sb.auth.signOut(); };
+      if ($("pkadd")) $("pkadd").onclick = function () {
+        var b = this; b.disabled = true; b.textContent = "Aguardando…";
+        sb.auth.registerPasskey().then(function (rr) {
+          b.disabled = false;
+          if (rr && rr.error) { b.textContent = "Ativar Face ID"; window.alert(pkMsg(rr.error)); return; }
+          b.textContent = "Face ID ativado";
+        }, function (err) { b.disabled = false; b.textContent = "Ativar Face ID"; window.alert(pkMsg(err)); });
+      };
       refresh();
     });
   }
 
   var ok = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(C.supabaseUrl || "") && C.supabaseKey && !/COLE_AQUI/.test(C.supabaseKey);
   if (!ok || !window.supabase) { main.innerHTML = '<div class="login"><h1>Painel em preparação</h1><p style="color:var(--mut)">Preencha o config.js com os dados do Supabase.</p></div>'; return; }
-  sb = window.supabase.createClient(C.supabaseUrl, C.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } });
+  sb = window.supabase.createClient(C.supabaseUrl, C.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, experimental: { passkey: true } } });
   document.querySelectorAll("#tabs button").forEach(function (b) { b.onclick = function () { tab = b.getAttribute("data-t"); render(); }; });
   var booted = false;
   sb.auth.onAuthStateChange(function (ev, s) { if (booted && (ev === "SIGNED_IN" || ev === "SIGNED_OUT")) start(s); });

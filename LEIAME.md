@@ -67,6 +67,14 @@ insert into private.settings values ('notify_secret', 'A-MESMA-SENHA-DO-NOTIFY_S
   on conflict (key) do update set value = excluded.value;
 ```
 
+### 5b. Entrar com Face ID ou digital (opcional)
+No Supabase, **Authentication > Passkeys**: ligue **Enable Passkey authentication** e preencha:
+- *Relying Party Display Name:* `SpeakerConnect`
+- *Relying Party ID:* `speakerconnect.com.br` (sem https e sem www; não troque depois, senão os Face IDs cadastrados param de funcionar)
+- *Relying Party Origins:* `https://speakerconnect.com.br,https://www.speakerconnect.com.br`
+
+Depois, cada pessoa ativa no app em **Conta > Entrar com Face ID** (ou no aviso que aparece depois de entrar com a senha). A equipe ativa no topo do painel. A senha continua valendo. O recurso está em fase beta no Supabase.
+
 ### 6. Sua conta da equipe
 1. Abra `https://SEU-DOMINIO/app/`, crie sua conta e confirme o e-mail.
 2. No **SQL Editor**, rode: `update public.profiles set role = 'admin' where email = 'seu-email@...';`

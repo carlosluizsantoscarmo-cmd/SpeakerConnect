@@ -44,6 +44,35 @@
     return "Não foi possível concluir agora. Tente de novo em instantes.";
   }
 
+  // ---------- Face ID / digital (passkeys do Supabase) ----------
+  function pkSupported() {
+    return !!(window.PublicKeyCredential && navigator.credentials && sb && sb.auth && typeof sb.auth.signInWithPasskey === "function");
+  }
+  function pkFriendly(err) {
+    var m = String((err && (err.name || "") + " " + (err.message || err.code || "")) || err || "");
+    if (/NotAllowed|abort|cancel|timed? ?out/i.test(m)) return "Entrada cancelada. Tente de novo ou use e-mail e senha.";
+    if (/not enabled|disabled|not available|passkey.*off/i.test(m)) return "O Face ID ainda não está disponível. Entre com e-mail e senha.";
+    if (/not found|no credential|unknown credential|InvalidState/i.test(m)) return "Este aparelho não tem Face ID cadastrado para o SpeakerConnect. Entre com e-mail e senha e ative em Conta.";
+    return friendly(err);
+  }
+  function pkLabel() {
+    var ua = navigator.userAgent;
+    if (/iphone|ipad|ipod|macintosh/i.test(ua)) return "Face ID ou Touch ID";
+    if (/android/i.test(ua)) return "digital ou rosto";
+    if (/windows/i.test(ua)) return "Windows Hello";
+    return "Face ID ou digital";
+  }
+  function pkList() {
+    return sb.auth.passkey.list().then(function (r) {
+      if (r.error) throw r.error;
+      var d = r.data;
+      return Array.isArray(d) ? d : (d && (d.passkeys || d.items)) || [];
+    });
+  }
+  function pkRegister() {
+    return sb.auth.registerPasskey().then(function (r) { if (r && r.error) throw r.error; return r; });
+  }
+
   // ---------- ícones ----------
   var ICONS = {
     home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
@@ -55,7 +84,8 @@
     send: '<path d="M3 11l18-8-8 18-2-8z"/>',
     check: '<path d="M5 12l5 5 9-10"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
-    phone: '<path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2"/>'
+    phone: '<path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2"/>',
+    face: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9v1M15 9v1M12 9v4h-1M9 15.5c1.7 1.3 4.3 1.3 6 0"/>'
   };
   function icon(n, s) { s = s || 22; return '<svg class="ic" width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[n] || "") + "</svg>"; }
   var LOGO = '<span class="logo">' + icon("mic", 20) + "SpeakerConnect</span>";
@@ -126,11 +156,26 @@
       '<div id="msg" role="alert"></div>' +
       '<button class="full" id="go" type="submit">' + (signup ? "Criar conta" : "Entrar") + "</button>" +
       (signup ? "" : '<p class="center" style="margin:12px 0 0"><a href="#/esqueci">Esqueci minha senha</a></p>') +
-      "</form>" + installHint(),
+      "</form>" +
+      (!signup && pkSupported() ? '<button class="full ghost pkbtn" id="pk" type="button">' + icon("face", 20) + "Entrar com " + e(pkLabel()) + "</button>" : "") +
+      installHint(),
       signup ? "Crie sua conta" : "Bem-vindo de volta",
       signup ? "Leva menos de um minuto." : "Entre para ver seus pedidos e propostas."
     );
     bindInstall();
+    var pk = $("pk");
+    if (pk) pk.onclick = function () {
+      var msg = $("msg");
+      msg.innerHTML = "";
+      busy(pk, true, "Aguardando o " + pkLabel() + "…");
+      sb.auth.signInWithPasskey().then(function (r) {
+        busy(pk, false);
+        if (r && r.error) msg.innerHTML = '<div class="err">' + e(pkFriendly(r.error)) + "</div>";
+      }, function (err) {
+        busy(pk, false);
+        msg.innerHTML = '<div class="err">' + e(pkFriendly(err)) + "</div>";
+      });
+    };
     $("t1").onclick = function () { go("#/entrar"); };
     $("t2").onclick = function () { go("#/cadastro"); };
     if (signup) {
@@ -147,9 +192,10 @@
       if (pw.length < 8) return fail("A senha precisa ter pelo menos 8 caracteres.");
       busy(btn, true);
       if (!signup) {
+        try { if (pkSupported()) sessionStorage.setItem("sc_offer_pk", "1"); } catch (x) {}
         sb.auth.signInWithPassword({ email: em, password: pw }).then(function (r) {
           busy(btn, false);
-          if (r.error) return fail(friendly(r.error));
+          if (r.error) { try { sessionStorage.removeItem("sc_offer_pk"); } catch (x) {} return fail(friendly(r.error)); }
         });
         return;
       }
@@ -411,6 +457,7 @@
       html += supportCard();
       shell(html, "home", head);
       bindSelo(); bindMp();
+      offerPasskey();
     }).catch(function (err) { shell('<div class="err">' + e(friendly(err)) + "</div>", "home", head); });
   }
 
@@ -785,6 +832,64 @@
   }
 
   // ---------- conta ----------
+  function bindPasskeyCard() {
+    var box = $("pklist"), add = $("pkadd");
+    function draw() {
+      pkList().then(function (items) {
+        if (!$("pklist")) return;
+        if (!items.length) { box.innerHTML = '<p class="muted small" style="margin:10px 0 0">Ainda não está ativado em nenhum aparelho.</p>'; return; }
+        box.innerHTML = '<ul class="pklist">' + items.map(function (k) {
+          var nm = k.friendly_name || k.name || "Aparelho";
+          var dt = k.created_at ? " · desde " + new Date(k.created_at).toLocaleDateString("pt-BR") : "";
+          return '<li><span>' + icon("check", 16) + e(nm) + '<small class="muted">' + e(dt) + '</small></span><button type="button" class="linkbtn" data-pk="' + e(k.id) + '">Remover</button></li>';
+        }).join("") + "</ul>";
+        box.querySelectorAll("[data-pk]").forEach(function (b) {
+          b.onclick = function () {
+            if (!window.confirm("Remover o " + pkLabel() + " deste aparelho? Você ainda poderá entrar com e-mail e senha.")) return;
+            busy(b, true, "Removendo…");
+            sb.auth.passkey.delete({ passkeyId: b.getAttribute("data-pk") }).then(function (r) {
+              if (r && r.error) { busy(b, false); toast(friendly(r.error)); return; }
+              toast("Removido."); draw();
+            }, function (err) { busy(b, false); toast(friendly(err)); });
+          };
+        });
+      }).catch(function (err) {
+        if (!$("pklist")) return;
+        box.innerHTML = '<p class="muted small" style="margin:10px 0 0">' + e(pkFriendly(err)) + "</p>";
+      });
+    }
+    add.onclick = function () {
+      busy(add, true, "Aguardando o " + pkLabel() + "…");
+      pkRegister().then(function () {
+        busy(add, false);
+        toast(pkLabel() + " ativado. Na próxima vez, toque em “Entrar com " + pkLabel() + "”.");
+        draw();
+      }, function (err) { busy(add, false); toast(pkFriendly(err)); });
+    };
+    draw();
+  }
+  function offerPasskey() {
+    var flag = null;
+    try { flag = sessionStorage.getItem("sc_offer_pk"); sessionStorage.removeItem("sc_offer_pk"); } catch (x) {}
+    if (!flag || !pkSupported()) return;
+    try { if (localStorage.getItem("sc_pk_skip")) return; } catch (x) {}
+    pkList().then(function (items) {
+      if (items.length) return;
+      var pad = app.querySelector(".pad");
+      if (!pad) return;
+      var card = document.createElement("div");
+      card.className = "card pkoffer";
+      card.innerHTML = "<h3>Entrar mais rápido</h3><p class=\"muted small\" style=\"margin:4px 0 0\">Quer usar o " + e(pkLabel()) + " para entrar da próxima vez, sem digitar a senha?</p>" +
+        '<div class="row" style="margin-top:12px"><button type="button" id="pkyes">' + icon("face", 20) + 'Ativar</button><button type="button" class="ghost" id="pkno">Agora não</button></div>';
+      pad.insertBefore(card, pad.firstChild);
+      $("pkno").onclick = function () { try { localStorage.setItem("sc_pk_skip", "1"); } catch (x) {} card.remove(); };
+      $("pkyes").onclick = function () {
+        var b = this;
+        busy(b, true, "Aguardando…");
+        pkRegister().then(function () { card.remove(); toast(pkLabel() + " ativado."); }, function (err) { busy(b, false); toast(pkFriendly(err)); });
+      };
+    }).catch(function () {});
+  }
   function screenAccount() {
     stopTimer();
     var head = topbar("Conta");
@@ -799,6 +904,7 @@
         '<label for="ws">Site <span class="opt">(opcional)</span></label><input id="ws" maxlength="200" value="' + e(c.website || "") + '">' : "") +
       '<div id="msg" role="alert"></div><button class="full" id="save">Salvar</button></form>';
     if (profile.role === "speaker") html += '<div id="mpbox"></div>' + seloCard();
+    if (pkSupported()) html += '<div class="card" id="pkcard"><h3>Entrar com ' + e(pkLabel()) + '</h3><p class="muted small" style="margin:4px 0 0">Entre no app sem digitar a senha, usando o desbloqueio do seu aparelho. A senha continua valendo.</p><div id="pklist"><p class="muted small">Carregando…</p></div><button class="full" id="pkadd" type="button">' + icon("face", 20) + "Ativar neste aparelho</button></div>";
     html += supportCard();
     html += '<button class="full ghost" id="out" type="button">Sair</button>' +
       '<button class="full linkbtn" id="del" type="button" style="color:var(--err)!important">Apagar minha conta</button>' +
@@ -809,6 +915,7 @@
     if (back === "ok") toast("Conta do Mercado Pago conectada.");
     if (back === "erro") toast("Não foi possível conectar a conta. Tente de novo.");
     if (profile.role === "speaker") loadMpConn().then(function () { var bx = $("mpbox"); if (bx) { bx.innerHTML = mpCard(); bindMp(); } });
+    if ($("pkcard")) bindPasskeyCard();
     $("f").onsubmit = function (ev) {
       ev.preventDefault();
       var btn = $("save"), ph = val("ph").replace(/\D/g, ""), cj = co ? val("cj").replace(/\D/g, "") : "";
@@ -892,7 +999,7 @@
       plain('<div class="card"><p class="muted" style="margin:0">' + (ok ? "Sem conexão. Confira a internet e atualize a página." : "O aplicativo ainda não foi ligado ao banco de dados (config.js).") + "</p></div>", "App em preparação");
       return;
     }
-    sb = window.supabase.createClient(C.supabaseUrl, C.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+    sb = window.supabase.createClient(C.supabaseUrl, C.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, experimental: { passkey: true } } });
     var started = false;
     function setUser(session) {
       var nu = session ? session.user : null;

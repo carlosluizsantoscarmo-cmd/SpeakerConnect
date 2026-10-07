@@ -178,3 +178,10 @@ nav.bottom a.on .ic{color:var(--brand)}
 .docrow b{display:block;font-size:14.5px;margin-bottom:4px}
 .doccard select{margin-bottom:6px}
 @media (min-width:900px){ .pform > .card.doccard{grid-column:1 / -1} }
+/* Face ID / digital */
+.pkbtn{margin-top:12px}
+.pklist{list-style:none;margin:10px 0 0;padding:0}
+.pklist li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}
+.pklist li span{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pklist small{font-size:13px}
+#pkcard > button{margin-top:14px}

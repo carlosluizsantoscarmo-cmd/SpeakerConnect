@@ -157,7 +157,25 @@
         },
         signOut: function () { setSession(null); listeners.forEach(function (l) { l("SIGNED_OUT", null); }); return Promise.resolve({ error: null }); },
         resetPasswordForEmail: function () { return Promise.resolve({ data: {}, error: null }); },
-        updateUser: function () { return Promise.resolve({ data: {}, error: null }); }
+        updateUser: function () { return Promise.resolve({ data: {}, error: null }); },
+        // passkeys (Face ID / digital): guarda em window.__pk
+        signInWithPasskey: function () {
+          var k = (window.__pk || [])[0];
+          if (!k) return Promise.resolve({ data: {}, error: { name: "NotAllowedError", message: "The operation either timed out or was not allowed." } });
+          var u = db.profiles.filter(function (p) { return p.id === k.user_id; })[0];
+          setSession(u); listeners.forEach(function (l) { l("SIGNED_IN", session); });
+          return Promise.resolve({ data: { session: session, user: session.user }, error: null });
+        },
+        registerPasskey: function () {
+          if (!session) return Promise.resolve({ data: null, error: { message: "not signed in" } });
+          window.__pk = window.__pk || [];
+          window.__pk.push({ id: uid(), user_id: session.user.id, friendly_name: "iPhone", created_at: new Date().toISOString() });
+          return Promise.resolve({ data: {}, error: null });
+        },
+        passkey: {
+          list: function () { return Promise.resolve({ data: (window.__pk || []).filter(function (k) { return session && k.user_id === session.user.id; }), error: null }); },
+          delete: function (o) { window.__pk = (window.__pk || []).filter(function (k) { return k.id !== o.passkeyId; }); return Promise.resolve({ data: {}, error: null }); }
+        }
       }
     };
   }
