@@ -76,7 +76,9 @@
       : [["home", "#/", "Início", "home"], ["buscar", "/#palestrantes", "Palestrantes", "search"], ["pedidos", "#/pedidos", "Pedidos", "list"], ["conta", "#/conta", "Conta", "user"]];
     var nav = items.map(function (i) { var on = tab === i[0]; return '<a href="' + i[1] + '" class="' + (on ? "on" : "") + '"' + (on ? ' aria-current="page"' : "") + ">" + icon(i[3]) + i[2] + "</a>"; }).join("");
     app.className = "";
-    app.innerHTML = (head || "") + '<div class="pad">' + inner + '</div><nav class="bottom" aria-label="Menu"><div class="in">' + nav + "</div></nav>";
+    var side = '<a class="side-brand" href="/" aria-label="Ir para o site">' + LOGO + "</a>";
+    var foot = '<div class="side-foot"><b>' + e(profile ? profile.name : "") + "</b><span>" + (sp ? "Palestrante" : "Empresa") + '</span><a href="/">Ir para o site</a><a href="#/sair">Sair</a></div>';
+    app.innerHTML = (head || "") + '<div class="pad">' + inner + '</div><nav class="bottom" aria-label="Menu"><div class="in">' + side + nav + foot + "</div></nav>";
     try { window.scrollTo(0, 0); } catch (x) {}
   }
   function topbar(title, back) {
@@ -645,7 +647,7 @@
       var status = { draft: ["Rascunho", "warn"], pending: ["Em análise", "warn"], approved: ["Publicado", "ok"], rejected: ["Precisa de ajustes", "err"], suspended: ["Suspenso", "err"] }[s.status] || ["", ""];
       var html = '<p style="margin:0 0 12px"><span class="pill ' + status[1] + '">' + status[0] + "</span>" + (s.status === "approved" ? ' <a class="small" href="/palestrante.html?id=' + e(s.id) + '">Ver página</a>' : "") + "</p>" +
         (s.status === "rejected" && s.review_note ? '<div class="err" style="margin:0 0 12px"><b>O que ajustar:</b> ' + e(s.review_note) + "</div>" : "") +
-        '<form id="f" novalidate><div class="card"><div class="photo">' + avatar(s.public_name, s.photo_url).replace('class="av"', 'class="av" id="pv"') +
+        '<form id="f" class="pform" novalidate><div class="card"><div class="photo">' + avatar(s.public_name, s.photo_url).replace('class="av"', 'class="av" id="pv"') +
         '<div><label for="pic" class="btn slim ghost" style="margin:0;cursor:pointer">Trocar foto</label><input id="pic" type="file" accept="image/jpeg,image/png,image/webp" hidden><p class="hint">Rosto bem visível, fundo neutro.</p></div></div>' +
         '<label for="pn">Nome público</label><input id="pn" maxlength="100" value="' + e(s.public_name || "") + '">' +
         '<label for="hl">Título <span class="opt">(uma frase sobre o que você entrega)</span></label><input id="hl" maxlength="120" value="' + e(s.headline || "") + '" placeholder="Ex.: Segurança do trabalho que as equipes levam para casa">' +
