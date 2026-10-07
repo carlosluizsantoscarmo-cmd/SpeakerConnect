@@ -22,8 +22,11 @@
 
 <main>
 <div class="stage">
+  <div class="stage-photo" aria-hidden="true">
+    <img src="https://images.unsplash.com/photo-1575029645377-046ad56539ee?w=1800&q=70&auto=format&fit=crop" alt="" fetchpriority="high" onload="this.classList.add('on')" onerror="this.remove()">
+  </div>
   <div class="wrap">
-    <div>
+    <div class="copy">
       <h1><span>Conectando mentes,</span><span>transformando negócios</span></h1>
       <p class="lead">Encontre o palestrante certo para a sua SIPAT, convenção ou treinamento. Peça orçamentos sem custo e contrate com pagamento protegido.</p>
       <form class="find" id="hero-find" role="search">
@@ -31,41 +34,34 @@
         <input id="hero-q" type="search" placeholder="Tema, nome ou cidade" autocomplete="off">
         <button class="btn spot" type="submit">Buscar</button>
       </form>
-      <div class="quick" aria-label="Temas mais procurados">
-        <a href="#palestrantes" data-cat="Segurança do Trabalho e SIPAT">SIPAT</a>
-        <a href="#palestrantes" data-cat="Liderança">Liderança</a>
-        <a href="#palestrantes" data-cat="Saúde Mental">Saúde mental</a>
-        <a href="#palestrantes" data-cat="Vendas">Vendas</a>
-        <a href="#palestrantes" data-cat="Motivacional">Motivacional</a>
-      </div>
-    </div>
-    <div class="mic" aria-hidden="true">
-      <svg viewBox="0 0 300 400" fill="none">
-        <path d="M150 40 L40 400 H260 Z" fill="url(#cone)"/>
-        <rect x="118" y="118" width="64" height="104" rx="32" fill="#2E2C78" stroke="#F5B841" stroke-width="3"/>
-        <path d="M128 140h44M128 158h44M128 176h44M128 194h44" stroke="#F5B841" stroke-opacity=".45" stroke-width="2"/>
-        <path d="M102 196v10a48 48 0 0 0 96 0v-10" stroke="#F5B841" stroke-width="5" stroke-linecap="round"/>
-        <path d="M150 254v100" stroke="#4F46E5" stroke-width="8" stroke-linecap="round"/>
-        <path d="M104 362h92" stroke="#4F46E5" stroke-width="8" stroke-linecap="round"/>
-        <defs><linearGradient id="cone" x1="150" y1="40" x2="150" y2="400" gradientUnits="userSpaceOnUse"><stop stop-color="#F5B841" stop-opacity=".35"/><stop offset="1" stop-color="#F5B841" stop-opacity="0"/></linearGradient></defs>
-      </svg>
+      <ul class="trust">
+        <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Perfis revisados pela equipe</li>
+        <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Orçamento sem custo</li>
+        <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Pix ou cartão pelo Mercado Pago</li>
+      </ul>
     </div>
   </div>
 </div>
-<div class="edge" aria-hidden="true"></div>
 
-<section id="palestrantes" style="padding-top:56px">
+<section id="temas" style="padding-bottom:0">
+  <div class="wrap">
+    <div class="sec-head"><div><h2>Explore por tema</h2><p class="muted">Escolha um tema para ver quem fala sobre ele.</p></div></div>
+    <div class="themes" id="themes"></div>
+  </div>
+</section>
+
+<section id="palestrantes">
   <div class="wrap">
     <div class="sec-head">
       <div><h2>Palestrantes</h2><p class="muted">Perfis revisados pela nossa equipe. O selo indica quem passou pela verificação.</p></div>
     </div>
     <div class="filters">
       <label class="skip" for="f-q">Buscar</label><input id="f-q" type="search" placeholder="Buscar por nome ou tema">
-      <label class="skip" for="f-cat">Tema</label><select id="f-cat"><option value="">Todos os temas</option></select>
+      <label class="skip" for="f-cat">Tema</label><select id="f-cat"><option value="">Tema</option></select>
       <label class="skip" for="f-uf">Estado</label>
-      <select id="f-uf"><option value="">Todo o Brasil</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select>
+      <select id="f-uf"><option value="">Estado</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select>
       <label class="skip" for="f-fmt">Formato</label>
-      <select id="f-fmt"><option value="">Presencial ou online</option><option value="presencial">Presencial</option><option value="online">Online</option></select>
+      <select id="f-fmt"><option value="">Formato</option><option value="presencial">Presencial</option><option value="online">Online</option></select>
     </div>
     <div class="grid" id="grid" aria-live="polite"></div>
   </div>
