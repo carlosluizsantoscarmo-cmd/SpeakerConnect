@@ -42,6 +42,7 @@ No GitHub, clique no arquivo e no lápis (editar):
 2. Depois do primeiro deploy, em **Settings > Variables and Secrets**, adicione como **Secret**:
    - `SUPABASE_SERVICE_ROLE_KEY` (chave secreta do Supabase)
    - `MP_ACCESS_TOKEN` (Access Token de produção da aplicação do Mercado Pago)
+   - `MP_PUBLIC_KEY` (Public Key de produção; pode ser texto em vez de Secret)
    - `MP_CLIENT_ID` e `MP_CLIENT_SECRET` (da mesma aplicação, passo 4)
    - `MP_TOKEN_KEY` (invente uma senha com 32 caracteres ou mais; ela cifra as contas dos palestrantes. Não troque depois, senão os palestrantes precisam conectar de novo)
    - `MP_WEBHOOK_SECRET` (passo 4)
@@ -50,8 +51,8 @@ No GitHub, clique no arquivo e no lápis (editar):
 3. **Domínio:** em **Settings > Domains & Routes > Add > Custom domain**, adicione o domínio e o `www`, como fizemos no Resolvo Já.
 
 ### 4. Mercado Pago
-1. Em **mercadopago.com.br/developers > Suas integrações > Criar aplicação**: nome `SpeakerConnect`, pagamentos online, desenvolvimento próprio, produto **Checkout Pro**. Se perguntar se é marketplace, responda **sim** (o Split depende disso).
-2. Em **Credenciais de produção**, copie o **Access Token** (`MP_ACCESS_TOKEN`), o **Client ID** (`MP_CLIENT_ID`) e o **Client Secret** (`MP_CLIENT_SECRET`) para o Cloudflare.
+1. Em **mercadopago.com.br/developers > Suas integrações > Criar aplicação**: nome `SpeakerConnect`, pagamentos online, desenvolvimento próprio, produto **Checkout Transparente** (o pagamento acontece dentro do app, com Pix e cartão, como no Resolvo Já). Se perguntar se é marketplace, responda **sim** (o Split depende disso).
+2. Em **Credenciais de produção**, copie para o Cloudflare o **Access Token** (`MP_ACCESS_TOKEN`), o **Client ID** (`MP_CLIENT_ID`) e o **Client Secret** (`MP_CLIENT_SECRET`), como Secrets. A **Public Key** vai como variável de texto `MP_PUBLIC_KEY` (ela é pública).
 3. Em **Editar aplicação** (ou **Configurações > OAuth / URLs de redirecionamento**), adicione a URL `https://SEU-DOMINIO/api/mp-oauth/callback`. É para onde o palestrante volta depois de conectar a conta.
 4. Em **Webhooks > Configurar notificações**, no modo produtivo, use a URL `https://SEU-DOMINIO/api/mp-webhook` e marque o evento **Pagamentos**.
 5. Copie a **assinatura secreta** gerada e salve no Cloudflare como `MP_WEBHOOK_SECRET`.

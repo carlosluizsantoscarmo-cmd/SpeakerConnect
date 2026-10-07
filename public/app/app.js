@@ -6,7 +6,7 @@
   var C = window.SC || {};
   var app = document.getElementById("app");
   var TERMS = "2026-10-v1";
-  var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false, mpConn = null;
+  var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false, mpConn = null, payActive = false, payTimer = null;
 
   // ---------- utilidades ----------
   function e(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -269,14 +269,112 @@
       });
     };
   }
+  // ---------- pagamento dentro do app (Pix e cartão, Mercado Pago) ----------
+  var mpSdk = null, mpSec = null;
+  function loadScript(src, attrs) {
+    return new Promise(function (ok, bad) {
+      var s = document.createElement("script"); s.src = src;
+      Object.keys(attrs || {}).forEach(function (k) { s.setAttribute(k, attrs[k]); });
+      s.onload = ok; s.onerror = function () { bad(new Error("Não foi possível carregar o pagamento. Confira a internet.")); };
+      document.head.appendChild(s);
+    });
+  }
+  function loadMpSdk() {
+    if (window.MercadoPago) return Promise.resolve();
+    if (!mpSdk) mpSdk = loadScript("https://sdk.mercadopago.com/js/v2").catch(function (x) { mpSdk = null; throw x; });
+    return mpSdk;
+  }
+  // Script de segurança do Mercado Pago: gera o identificador do aparelho usado pelo antifraude.
+  function loadMpSecurity() {
+    if (window.MP_DEVICE_SESSION_ID) return Promise.resolve();
+    if (!mpSec) mpSec = loadScript("https://www.mercadopago.com/v2/security.js", { view: "checkout" }).then(function () { return new Promise(function (ok) { setTimeout(ok, 600); }); }, function () {});
+    return mpSec;
+  }
+  function stopPay() { payActive = false; if (payTimer) { clearInterval(payTimer); payTimer = null; } }
+  // opts: { kind: "quote"|"verified", quoteId, amount, onPaid }
+  function payPanel(box, opts) {
+    payActive = true;
+    box.innerHTML = '<div id="payerr" role="alert"></div><div class="row" style="margin-top:4px"><button type="button" class="spot" id="ppix">Pix</button><button type="button" class="ghost" id="pcrd">Cartão</button></div><div id="paybody"></div>' +
+      '<p class="hint center" style="margin-top:12px">Pagamento seguro pelo Mercado Pago. Os dados do cartão não passam pelo SpeakerConnect.</p>';
+    function err(m) { var b = $("payerr"); if (b) b.innerHTML = m ? '<div class="err" style="margin:0 0 10px">' + e(m) + "</div>" : ""; }
+    function base() { var b = { kind: opts.kind }; if (opts.quoteId) b.quote_id = opts.quoteId; return b; }
+    function paid() { stopPay(); toast("Pagamento confirmado!"); if (opts.onPaid) opts.onPaid(); }
+    function watch(id) {
+      if (payTimer) clearInterval(payTimer);
+      var n = 0;
+      payTimer = setInterval(function () {
+        if (++n > 120 || !$("paybody")) { clearInterval(payTimer); payTimer = null; return; }
+        api("/api/pagamento?id=" + encodeURIComponent(id), "GET").then(function (d) { if (d.status === "paid") paid(); }).catch(function () {});
+      }, 5000);
+    }
+    function pixView(id, pix) {
+      $("paybody").innerHTML = (pix.qr_base64 ? '<img alt="QR Code do Pix" style="width:210px;height:210px;display:block;margin:14px auto 8px;border-radius:12px" src="data:image/png;base64,' + e(pix.qr_base64) + '">' : "") +
+        '<p class="small center muted" style="margin:0 0 8px">Abra o app do seu banco, escolha Pix e leia o QR Code, ou copie o código.</p>' +
+        '<input id="pixcode" readonly value="' + e(pix.code || "") + '" aria-label="Código Pix copia e cola"><button type="button" class="full" id="cp">Copiar código Pix</button>' +
+        '<p class="small center muted" style="margin:10px 0 0">Esta tela atualiza sozinha quando o pagamento for confirmado.' + (pix.expires_at ? " O código vale até " + new Date(pix.expires_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + "." : "") + "</p>";
+      $("cp").onclick = function () {
+        var v = $("pixcode").value;
+        (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(v) : Promise.reject()).then(function () { toast("Código copiado!"); }, function () { $("pixcode").select(); toast("Selecione e copie o código."); });
+      };
+      watch(id);
+    }
+    $("ppix").onclick = function () {
+      err(""); var b = this; busy(b, true, "Gerando…");
+      $("paybody").innerHTML = '<p class="muted small center">Gerando o Pix…</p>';
+      api("/api/mp/pagar", "POST", Object.assign(base(), { method: "pix" })).then(function (d) {
+        busy(b, false);
+        if (d.status === "paid" || d.status === "approved") return paid();
+        if (!d.pix || !d.pix.code) throw new Error(d.error || "Não foi possível gerar o Pix agora.");
+        pixView(d.id, d.pix);
+      }).catch(function (x) { busy(b, false); $("paybody").innerHTML = ""; err(x.message); });
+    };
+    $("pcrd").onclick = function () {
+      err(""); stopPay(); payActive = true;
+      $("paybody").innerHTML = '<p class="muted small center">Carregando o formulário do cartão…</p>';
+      var cfgUrl = "/api/mp/config" + (opts.quoteId ? "?quote_id=" + encodeURIComponent(opts.quoteId) : "");
+      Promise.all([api(cfgUrl, "GET"), loadMpSdk(), loadMpSecurity()]).then(function (r) {
+        var mp = new window.MercadoPago(r[0].public_key, { locale: "pt-BR" });
+        $("paybody").innerHTML = '<div id="cardbrick" style="margin-top:12px"></div>';
+        return mp.bricks().create("cardPayment", "cardbrick", {
+          initialization: { amount: opts.amount / 100, payer: { email: (user && user.email) || "" } },
+          customization: { paymentMethods: { maxInstallments: 12 } },
+          callbacks: {
+            onReady: function () {},
+            onError: function () { err("Confira os dados do cartão e tente de novo."); },
+            onSubmit: function (d) {
+              err("");
+              return api("/api/mp/pagar", "POST", Object.assign(base(), { method: "card", token: d.token, installments: d.installments, payment_method_id: d.payment_method_id,
+                issuer_id: d.issuer_id, identification: d.payer && d.payer.identification, device_id: window.MP_DEVICE_SESSION_ID || null })).then(function (res) {
+                if (!res.ok) { err(res.error || "Pagamento não aprovado."); throw new Error("recusado"); }
+                if (res.status === "paid" || res.status === "approved") return paid();
+                toast("Pagamento em análise pelo Mercado Pago. Avisamos por e-mail."); watch(res.id);
+              });
+            }
+          }
+        });
+      }).catch(function (x) { $("paybody").innerHTML = ""; err(x.message || "Não foi possível abrir o cartão. Use o Pix."); });
+    };
+  }
+
+  function screenSelo() {
+    stopTimer(); stopPay();
+    var head = topbar("Selo de verificado", "#/conta");
+    if (profile.role !== "speaker") { go("#/"); return; }
+    if (isVerified(me)) { shell(seloCard(), "conta", head); return; }
+    if (!me || me.status !== "approved") { shell('<div class="card"><h3>Primeiro, a aprovação</h3><p class="muted small" style="margin:6px 0 0">O selo pode ser ativado depois que a equipe aprovar seu perfil.</p></div>', "conta", head); return; }
+    shell('<div class="card dark"><span class="pill ok">Palestrante verificado</span><h3 style="margin-top:12px">Apareça primeiro e ganhe a marca de verificado</h3><p class="muted small" style="margin:6px 0 0">' + e(C.verifiedPrice || "") + '. Você pode desistir em até 7 dias e receber o valor de volta.</p></div>' +
+      '<div class="card"><p class="muted small" style="margin:0">Valor</p><p class="price">Carregando…</p><div id="paybox"></div></div>', "conta", head);
+    api("/api/mp/config", "GET").then(function (cfg) {
+      document.querySelector(".price").textContent = brl(cfg.amount_cents);
+      payPanel($("paybox"), { kind: "verified", amount: cfg.amount_cents, onPaid: function () { loadMe().then(function () { go("#/"); }); } });
+    }).catch(function (x) { $("paybox").innerHTML = '<div class="err">' + e(x.message) + "</div>"; });
+  }
+
   function bindSelo() {
     var b = $("selo");
     if (!b) return;
     b.onclick = function () {
-      busy(b, true, "Abrindo o Mercado Pago…");
-      api("/api/selo", "POST", {}).then(function (d) { location.href = d.url; }).catch(function (err) {
-        busy(b, false); $("selomsg").innerHTML = '<div class="err">' + e(err.message) + "</div>";
-      });
+      go("#/selo");
     };
   }
   function screenHome() {
@@ -438,7 +536,7 @@
           '<button class="full danger" type="button" id="pdecl">Não posso atender</button></form>';
       }
       if (!sp && Q.status === "proposed") html += '<button class="full" id="acc" type="button">Aceitar proposta de ' + brl(Q.amount_cents) + "</button>";
-      if (!sp && Q.status === "accepted") html += '<div class="card dark"><h3>Proposta aceita</h3><p class="muted small" style="margin:4px 0 12px">Pague por Pix ou cartão pelo Mercado Pago. Assim que o pagamento for confirmado, liberamos o contato do palestrante.</p><button class="full spot" id="pay" type="button" style="margin:0">Pagar ' + brl(Q.amount_cents) + '</button><div id="paymsg" role="alert"></div></div>';
+      if (!sp && Q.status === "accepted") html += '<div class="card"><h3>Pagamento</h3><p class="price">' + brl(Q.amount_cents) + '</p><p class="muted small" style="margin:4px 0 8px">Pague por Pix ou cartão aqui mesmo. O valor vai para o palestrante pelo Mercado Pago, e o contato dele é liberado assim que o pagamento for confirmado.</p><div id="paybox"></div></div>';
       if (sp && Q.status === "accepted") html += '<div class="card"><h3>Aguardando o pagamento da empresa</h3><p class="muted small" style="margin:4px 0 0">Avisamos você por e-mail assim que ele for confirmado.</p></div>';
       if (Q.status === "paid" || Q.status === "done") html += '<div class="card" id="contacts"><h3>Contato liberado</h3><p class="muted small">Carregando…</p></div>';
       if (!sp && Q.status === "paid") html += '<button class="full ghost" id="done" type="button">A palestra já aconteceu</button>';
@@ -485,11 +583,7 @@
         if (!window.confirm("Aceitar a proposta de " + brl(Q.amount_cents) + "? Em seguida você poderá pagar.")) return;
         update({ status: "accepted" }, "Proposta aceita.");
       };
-      if ($("pay")) $("pay").onclick = function () {
-        var b = this; busy(b, true, "Abrindo o Mercado Pago…");
-        api("/api/pagar", "POST", { quote_id: Q.id }).then(function (d) { location.href = d.url; })
-          .catch(function (err) { busy(b, false); $("paymsg").innerHTML = '<div class="err">' + e(err.message) + "</div>"; });
-      };
+      if ($("paybox")) payPanel($("paybox"), { kind: "quote", quoteId: Q.id, amount: Q.amount_cents, onPaid: function () { load().then(render); } });
       if ($("done")) $("done").onclick = function () { update({ status: "done" }, "Que bom! Obrigado por usar o SpeakerConnect."); };
       if ($("cancel")) $("cancel").onclick = function () { if (window.confirm("Cancelar este pedido?")) update({ status: "cancelled" }, "Pedido cancelado."); };
       if ($("contacts")) sb.rpc("quote_contacts", { qid: Q.id }).then(function (r) {
@@ -521,7 +615,7 @@
       // novas mensagens a cada 20 s, sem atrapalhar quem está digitando
       timer = setInterval(function () {
         var typing = $("mb") && $("mb").value, editing = $("am") && document.activeElement && document.activeElement.closest && document.activeElement.closest("form");
-        if (typing || editing || document.hidden) return;
+        if (typing || editing || payActive || document.hidden) return;
         load().then(render);
       }, 20000);
     }).catch(function (err) { shell('<div class="err">' + e(friendly(err)) + "</div>", "pedidos", head); });
@@ -685,6 +779,7 @@
     return { path: i < 0 ? h : h.slice(0, i), q: new URLSearchParams(i < 0 ? "" : h.slice(i + 1)) };
   }
   function route() {
+    stopPay();
     var p = hashParts();
     if (recovering) return screenNewPassword();
     if (!user) {
@@ -713,6 +808,7 @@
     if (p.path === "#/novo-pedido") return screenNewQuote(p.q);
     if (p.path === "#/perfil") return screenProfile();
     if (p.path === "#/conta") return screenAccount();
+    if (p.path === "#/selo") return screenSelo();
     return screenHome();
   }
 

@@ -537,6 +537,11 @@ revoke all on public.speaker_mp_accounts from anon, authenticated;
 
 alter table public.payments add column if not exists split boolean not null default false;
 alter table public.payments add column if not exists mp_seller_id text;
+alter table public.payments add column if not exists method text;
+alter table public.payments add column if not exists pix_code text;
+alter table public.payments add column if not exists pix_qr text;
+alter table public.payments add column if not exists pix_expires_at timestamptz;
+alter table public.speaker_mp_accounts add column if not exists public_key text;
 
 -- Diz só se o palestrante já conectou a conta (sem mostrar nada da conta).
 create or replace function public.mp_connected(sid uuid) returns boolean

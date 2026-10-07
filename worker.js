@@ -2,12 +2,13 @@
 // As páginas vêm da pasta public (binding ASSETS); só os endereços /api/* passam por aqui.
 //
 // Endereços:
-//   POST   /api/selo          palestrante aprovado paga o selo de verificado (devolve o link do Mercado Pago)
-//   POST   /api/pagar         empresa paga uma proposta aceita: o valor cai direto na conta Mercado Pago do palestrante (Split)
+//   GET    /api/mp/config     chave pública para o formulário do cartão (do palestrante, quando é contratação)
+//   POST   /api/mp/pagar      paga dentro do app (Pix ou cartão): selo (conta da plataforma) ou contratação
+//                             (Split: cai direto na conta Mercado Pago do palestrante, a comissão vai para a plataforma)
 //   POST   /api/mp/conectar   palestrante logado: devolve o link para conectar a conta do Mercado Pago (OAuth)
 //   GET    /api/mp-oauth/callback  o Mercado Pago devolve o palestrante aqui; guardamos o token cifrado
 //   POST   /api/reembolso     equipe logada: devolve um pagamento (selo ou contratação)
-//   GET    /api/pagamento     status de um pagamento (página de retorno do Mercado Pago)
+//   GET    /api/pagamento     status de um pagamento (o app consulta enquanto mostra o Pix)
 //   POST   /api/mp-webhook    aviso do Mercado Pago (assinatura conferida; o pagamento é consultado na API)
 //   POST   /api/aviso         aviso vindo do Supabase -> e-mail (cabeçalho x-sc-secret)
 //   DELETE /api/conta         a própria pessoa apaga a conta (LGPD)
@@ -16,6 +17,7 @@
 //   SUPABASE_URL, SUPABASE_ANON_KEY            (texto)
 //   SUPABASE_SERVICE_ROLE_KEY                  (Secret)  nunca vai para o navegador
 //   MP_ACCESS_TOKEN, MP_WEBHOOK_SECRET         (Secret)  Mercado Pago da plataforma (selo e avisos)
+//   MP_PUBLIC_KEY                              (texto)   Public Key de produção da aplicação (formulário do cartão)
 //   MP_CLIENT_ID, MP_CLIENT_SECRET             (Secret)  da mesma aplicação, para conectar as contas dos palestrantes (Split)
 //   MP_TOKEN_KEY                               (Secret)  senha longa (24+ caracteres) que cifra os tokens dos palestrantes
 //   RESEND_API_KEY (Secret), MAIL_FROM, NOTIFY_EMAIL    e-mails
@@ -124,33 +126,6 @@ function later(ctx, p) { if (ctx && ctx.waitUntil) ctx.waitUntil(p); return p; }
 const footer = (env, request) => `\n\nAbrir o ${BRAND}: ${siteUrl(env, request)}/app/\n\nVocê recebe este e-mail porque tem cadastro no ${BRAND}.`;
 
 // ---------- Mercado Pago ----------
-// token: o da plataforma (selo) ou o do palestrante (contratação, com marketplace_fee = comissão da plataforma).
-async function createPreference(env, request, { paymentId, title, cents, payer, token, feeCents }) {
-  const site = siteUrl(env, request);
-  const back = (s) => `${site}/pagamento.html?status=${s}&id=${paymentId}`;
-  const pref = {
-    items: [{ id: paymentId, title: line(title, 120), quantity: 1, currency_id: "BRL", unit_price: cents / 100 }],
-    payer: { name: payer.name, email: payer.email },
-    external_reference: paymentId,
-    back_urls: { success: back("ok"), pending: back("pendente"), failure: back("falhou") },
-    auto_return: "approved",
-    notification_url: site + "/api/mp-webhook",
-    statement_descriptor: "SPEAKERCONNECT",
-  };
-  if (feeCents) pref.marketplace_fee = feeCents / 100;
-  const res = await fetch(MP_API + "/checkout/preferences", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + (token || env.MP_ACCESS_TOKEN), "Content-Type": "application/json", "X-Idempotency-Key": paymentId },
-    body: JSON.stringify(pref),
-  });
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok || !out.init_point) {
-    console.error("Mercado Pago recusou a preferência:", res.status, JSON.stringify(out).slice(0, 300));
-    return null;
-  }
-  return out.init_point;
-}
-
 export async function mpSignatureValid({ secret, signature, requestId, dataId, now = Date.now() }) {
   if (!secret || !signature || !requestId || !dataId) return false;
   const parts = Object.fromEntries(String(signature).split(",").map((p) => p.trim().split("=", 2)));
@@ -268,7 +243,7 @@ async function oauthCallback({ request, env }) {
   try {
     const d = await oauthToken(env, { grant_type: "authorization_code", code: q.get("code"), redirect_uri: site + "/api/mp-oauth/callback" });
     await sb(env, "/rest/v1/speaker_mp_accounts?on_conflict=speaker_id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: {
-      speaker_id: userId, mp_user_id: String(d.user_id), access_token: await seal(env, d.access_token),
+      speaker_id: userId, mp_user_id: String(d.user_id), access_token: await seal(env, d.access_token), public_key: d.public_key || null,
       refresh_token: d.refresh_token ? await seal(env, d.refresh_token) : null,
       expires_at: new Date(Date.now() + (d.expires_in || 15552000) * 1000).toISOString(),
       connected_at: new Date().toISOString(), updated_at: new Date().toISOString() } });
@@ -282,68 +257,139 @@ async function readBody(request, max = 4000) {
   try { const b = JSON.parse(raw || "{}"); return b && typeof b === "object" ? b : null; } catch { return null; }
 }
 
-// ---------- POST /api/selo ----------
-async function seloPost({ request, env }) {
-  if (!configured(env) || !env.MP_ACCESS_TOKEN) return json(503, { error: "O pagamento ainda não está configurado." });
-  if (!originAllowed(request, env)) return json(403, { error: "Origem não permitida." });
-  const cents = parseInt(env.VERIFIED_PRICE_CENTS || "0", 10);
-  if (!(cents > 0)) return json(503, { error: "O valor do selo ainda não foi definido." });
-  const me = await currentUser(request, env);
-  if (!me) return json(401, { error: "Entre na sua conta para continuar." });
-  if (me.profile.role !== "speaker") return json(403, { error: "O selo é só para palestrantes." });
-  const sp = await one(env, `/rest/v1/speakers?id=eq.${me.id}&select=status,verified_until`);
-  if (!sp || sp.status !== "approved") return json(400, { error: "Seu perfil precisa estar aprovado pela equipe antes do selo." });
-  const days = parseInt(env.VERIFIED_DAYS || "365", 10);
-  if (sp.verified_until && (days === 0 || new Date(sp.verified_until) - Date.now() > 30 * 864e5)) {
-    return json(400, { error: "Seu selo já está ativo." });
-  }
-
-  const title = `Selo de palestrante verificado - ${BRAND}`;
-  const rows = await sb(env, "/rest/v1/payments", {
-    method: "POST", prefer: "return=representation",
-    body: { kind: "verified", user_id: me.id, speaker_id: me.id, description: title, amount_cents: cents, payer_name: me.profile.name, payer_email: me.email },
-  });
-  const pay = rows[0];
-  const url = await createPreference(env, request, { paymentId: pay.id, title, cents, payer: { name: me.profile.name, email: me.email } });
-  if (!url) return json(502, { error: "O Mercado Pago não respondeu. Tente de novo em instantes." });
-  return json(200, { id: pay.id, url });
-}
-
-// ---------- POST /api/pagar ----------
+// ---------- Pagamento dentro do app (Checkout Transparente) ----------
 export function split(amountCents, pct) {
   const p = Math.min(Math.max(Number(pct) || 0, 0), 100);
   const commission = Math.round((amountCents * p) / 100);
   return { commission, payout: amountCents - commission };
 }
+const MOTIVOS = {
+  cc_rejected_insufficient_amount: "Limite insuficiente no cartão.",
+  cc_rejected_bad_filled_card_number: "Confira o número do cartão.",
+  cc_rejected_bad_filled_date: "Confira a validade do cartão.",
+  cc_rejected_bad_filled_security_code: "Confira o código de segurança.",
+  cc_rejected_bad_filled_other: "Confira os dados do cartão.",
+  cc_rejected_call_for_authorize: "O banco pediu autorização. Fale com o banco ou use outro cartão.",
+  cc_rejected_card_disabled: "Cartão desativado. Use outro cartão.",
+  cc_rejected_high_risk: "Pagamento recusado por segurança. Tente outro cartão ou pague por Pix.",
+  cc_rejected_duplicated_payment: "Este pagamento já foi feito. Confira seu pedido antes de tentar de novo.",
+};
+const motivo = (d) => MOTIVOS[d] || "O pagamento não foi aprovado. Tente outro cartão ou pague por Pix.";
 
-async function pagarPost({ request, env }) {
-  if (!configured(env) || !splitReady(env)) return json(503, { error: "O pagamento ainda não está configurado." });
-  if (!originAllowed(request, env)) return json(403, { error: "Origem não permitida." });
-  const b = await readBody(request);
-  if (!b || !UUID.test(String(b.quote_id || ""))) return json(400, { error: "Pedido inválido." });
+// Descobre o que está sendo pago, quanto custa (sempre pelo banco) e em qual conta cobrar.
+async function resolveCharge(env, me, b) {
+  if (b.kind === "verified") {
+    if (me.profile.role !== "speaker") return { error: [403, "O selo é só para palestrantes."] };
+    const cents = parseInt(env.VERIFIED_PRICE_CENTS || "0", 10);
+    if (!(cents > 0)) return { error: [503, "O valor do selo ainda não foi definido."] };
+    const sp = await one(env, `/rest/v1/speakers?id=eq.${me.id}&select=status,verified_until`);
+    if (!sp || sp.status !== "approved") return { error: [400, "Seu perfil precisa estar aprovado pela equipe antes do selo."] };
+    const days = parseInt(env.VERIFIED_DAYS || "365", 10);
+    if (sp.verified_until && (days === 0 || new Date(sp.verified_until) - Date.now() > 30 * 864e5)) return { error: [400, "Seu selo já está ativo."] };
+    return { kind: "verified", cents, fee: 0, payout: 0, token: env.MP_ACCESS_TOKEN, publicKey: env.MP_PUBLIC_KEY, split: false,
+      title: `Selo de palestrante verificado - ${BRAND}`, match: `kind=eq.verified&user_id=eq.${me.id}`, row: { speaker_id: me.id } };
+  }
+  if (!UUID.test(String(b.quote_id || ""))) return { error: [400, "Pedido inválido."] };
+  const q = await one(env, `/rest/v1/quotes?id=eq.${b.quote_id}&select=id,company_id,speaker_id,title,status,amount_cents,speaker_name`);
+  if (!q || q.company_id !== me.id) return { error: [404, "Pedido não encontrado."] };
+  if (q.status === "paid" || q.status === "done") return { error: [400, "Este pedido já foi pago."] };
+  if (q.status !== "accepted" || !(q.amount_cents > 0)) return { error: [400, "Aceite a proposta antes de pagar."] };
+  const token = await sellerToken(env, q.speaker_id);
+  if (!token) return { error: [409, "O palestrante ainda não conectou a conta do Mercado Pago para receber. Avisamos a equipe; tente de novo mais tarde."], code: "speaker_not_connected" };
+  const acc = await one(env, `/rest/v1/speaker_mp_accounts?speaker_id=eq.${q.speaker_id}&select=mp_user_id,public_key`);
+  const { commission, payout } = split(q.amount_cents, env.COMMISSION_PCT);
+  return { kind: "quote", cents: q.amount_cents, fee: commission, payout, token, publicKey: (acc && acc.public_key) || env.MP_PUBLIC_KEY, split: true,
+    title: `Palestra: ${line(q.title, 60)} - ${line(q.speaker_name, 40)}`, match: `kind=eq.quote&quote_id=eq.${q.id}`,
+    row: { quote_id: q.id, speaker_id: q.speaker_id, mp_seller_id: acc ? acc.mp_user_id : null } };
+}
+
+// GET /api/mp/config?quote_id=...  chave pública para o formulário do cartão (a do palestrante, quando é contratação)
+async function mpConfigGet({ request, env }) {
+  if (!configured(env)) return json(503, { error: "Servidor não configurado." });
   const me = await currentUser(request, env);
   if (!me) return json(401, { error: "Entre na sua conta para continuar." });
-  const q = await one(env, `/rest/v1/quotes?id=eq.${b.quote_id}&select=id,company_id,speaker_id,title,status,amount_cents,speaker_name`);
-  if (!q || q.company_id !== me.id) return json(404, { error: "Pedido não encontrado." });
-  if (q.status === "paid" || q.status === "done") return json(400, { error: "Este pedido já foi pago." });
-  if (q.status !== "accepted" || !(q.amount_cents > 0)) return json(400, { error: "Aceite a proposta antes de pagar." });
+  const qid = new URL(request.url).searchParams.get("quote_id");
+  const c = await resolveCharge(env, me, qid ? { kind: "quote", quote_id: qid } : { kind: "verified" });
+  if (c.error) return json(c.error[0], { error: c.error[1], code: c.code });
+  if (!c.publicKey) return json(503, { error: "Pagamento por cartão ainda não está disponível. Use o Pix." });
+  return json(200, { public_key: c.publicKey, amount_cents: c.cents });
+}
 
-  const sellerTok = await sellerToken(env, q.speaker_id);
-  if (!sellerTok) return json(409, { error: "O palestrante ainda não conectou a conta do Mercado Pago para receber. Avisamos a equipe; tente de novo mais tarde.", code: "speaker_not_connected" });
-  const acc = await one(env, `/rest/v1/speaker_mp_accounts?speaker_id=eq.${q.speaker_id}&select=mp_user_id`);
-  const { commission, payout } = split(q.amount_cents, env.COMMISSION_PCT);
-  const title = `Palestra: ${line(q.title, 60)} - ${line(q.speaker_name, 40)}`;
-  const rows = await sb(env, "/rest/v1/payments", {
-    method: "POST", prefer: "return=representation",
-    body: { kind: "quote", user_id: me.id, quote_id: q.id, speaker_id: q.speaker_id, description: title, amount_cents: q.amount_cents,
-            commission_cents: commission, payout_cents: payout, payer_name: me.profile.name, payer_email: me.email,
-            split: true, mp_seller_id: acc ? acc.mp_user_id : null },
-  });
+// POST /api/mp/pagar  { kind: "quote"|"verified", quote_id?, method: "pix"|"card", token?, installments?, payment_method_id?, issuer_id?, identification?, device_id? }
+async function pagarPost({ request, env, ctx }) {
+  if (!configured(env) || !env.MP_ACCESS_TOKEN) return json(503, { error: "O pagamento ainda não está configurado." });
+  if (!originAllowed(request, env)) return json(403, { error: "Origem não permitida." });
+  const b = await readBody(request, 6000);
+  if (!b || (b.method !== "pix" && b.method !== "card") || (b.kind !== "quote" && b.kind !== "verified")) return json(400, { error: "Pedido inválido." });
+  const me = await currentUser(request, env);
+  if (!me) return json(401, { error: "Entre na sua conta para continuar." });
+  if (b.kind === "quote" && !splitReady(env)) return json(503, { error: "O pagamento ainda não está configurado." });
+  let card = null;
+  if (b.method === "card") {
+    const inst = Number(b.installments || 1);
+    if (typeof b.token !== "string" || b.token.length < 8 || b.token.length > 200 || typeof b.payment_method_id !== "string" ||
+        !/^[a-z0-9_]{2,30}$/i.test(b.payment_method_id) || !Number.isInteger(inst) || inst < 1 || inst > 12) return json(400, { error: "Dados do cartão inválidos." });
+    card = { token: b.token, installments: inst, payment_method_id: b.payment_method_id, issuer_id: b.issuer_id ? String(b.issuer_id).slice(0, 20) : undefined,
+      device: typeof b.device_id === "string" && /^[A-Za-z0-9_.:-]{8,200}$/.test(b.device_id) ? b.device_id : null,
+      ident: b.identification && typeof b.identification === "object" ? { type: line(b.identification.type, 10), number: String(b.identification.number || "").replace(/\D/g, "").slice(0, 20) } : null };
+  }
+  const c = await resolveCharge(env, me, b);
+  if (c.error) return json(c.error[0], { error: c.error[1], code: c.code });
+
+  // Pix pendente e ainda válido: devolve o mesmo código em vez de criar outro.
+  const prev = await sb(env, `/rest/v1/payments?${c.match}&status=eq.pending&order=created_at.desc&limit=1&select=*`);
+  const old = Array.isArray(prev) ? prev[0] : null;
+  if (old && b.method === "pix" && old.method === "pix" && old.pix_code && old.pix_expires_at && Date.parse(old.pix_expires_at) > Date.now() + 60000) {
+    return json(200, { ok: true, id: old.id, status: "pending", pix: { code: old.pix_code, qr_base64: old.pix_qr, expires_at: old.pix_expires_at } });
+  }
+
+  const rows = await sb(env, "/rest/v1/payments", { method: "POST", prefer: "return=representation", body: {
+    kind: c.kind, user_id: me.id, description: c.title, amount_cents: c.cents, commission_cents: c.fee, payout_cents: c.payout,
+    payer_name: me.profile.name, payer_email: me.email, split: c.split, method: b.method, ...c.row } });
   const pay = rows[0];
-  const url = await createPreference(env, request, { paymentId: pay.id, title, cents: q.amount_cents, payer: { name: me.profile.name, email: me.email },
-    token: sellerTok, feeCents: commission });
-  if (!url) return json(502, { error: "O Mercado Pago não respondeu. Tente de novo em instantes." });
-  return json(200, { id: pay.id, url });
+  const nm = String(me.profile.name || "").trim().split(/\s+/).filter(Boolean);
+  const ph = String(me.profile.phone || "").replace(/\D/g, "");
+  const payerInfo = {};
+  if (nm[0]) payerInfo.first_name = nm[0].slice(0, 50);
+  if (nm.length > 1) payerInfo.last_name = nm.slice(1).join(" ").slice(0, 50);
+  if (ph.length >= 10) payerInfo.phone = { area_code: ph.slice(0, 2), number: ph.slice(2, 12) };
+  const body = {
+    transaction_amount: c.cents / 100, description: c.title, external_reference: pay.id, statement_descriptor: "SPEAKERCONNECT",
+    notification_url: siteUrl(env, request) + "/api/mp-webhook", payer: { email: me.email },
+    additional_info: { payer: payerInfo, items: [{ id: pay.id, title: line(c.title, 100), category_id: "services", quantity: 1, unit_price: c.cents / 100 }] },
+  };
+  if (c.fee) body.application_fee = c.fee / 100;
+  if (b.method === "pix") {
+    body.payment_method_id = "pix";
+    body.date_of_expiration = new Date(Date.now() + 30 * 60 * 1000).toISOString().replace("Z", "+00:00");
+  } else {
+    Object.assign(body, { token: card.token, installments: card.installments, payment_method_id: card.payment_method_id });
+    if (card.issuer_id) body.issuer_id = card.issuer_id;
+    if (card.ident && card.ident.number) body.payer.identification = card.ident;
+  }
+  const headers = { Authorization: "Bearer " + c.token, "Content-Type": "application/json", "X-Idempotency-Key": "sc-" + pay.id };
+  if (card && card.device) headers["X-meli-session-id"] = card.device;
+  let res, m;
+  try {
+    res = await fetch(MP_API + "/v1/payments", { method: "POST", headers, body: JSON.stringify(body) });
+    m = await res.json().catch(() => ({}));
+  } catch (e) {
+    console.error("Mercado Pago fora do ar:", e && e.message);
+    return json(502, { error: "Não consegui falar com o Mercado Pago. Tente de novo." });
+  }
+  if (!res.ok || !m || !m.id) {
+    console.error("Mercado Pago recusou o pagamento:", res.status, JSON.stringify(m && (m.message || m.error)).slice(0, 200), JSON.stringify(m && m.cause).slice(0, 300));
+    await sb(env, `/rest/v1/payments?id=eq.${pay.id}`, { method: "PATCH", body: { status: "failed" } });
+    return json(502, { error: "O Mercado Pago não aceitou o pagamento. Confira os dados ou tente o Pix." });
+  }
+  const tdata = m.point_of_interaction && m.point_of_interaction.transaction_data;
+  const patch = { mp_payment_id: String(m.id) };
+  if (b.method === "pix" && tdata) Object.assign(patch, { pix_code: tdata.qr_code || null, pix_qr: tdata.qr_code_base64 || null, pix_expires_at: m.date_of_expiration ? new Date(m.date_of_expiration).toISOString() : null });
+  await sb(env, `/rest/v1/payments?id=eq.${pay.id}`, { method: "PATCH", body: patch });
+  const applied = await applyPayment(env, request, m, ctx);
+  if (m.status === "rejected") return json(200, { ok: false, id: pay.id, status: "rejected", error: motivo(m.status_detail) });
+  return json(200, { ok: true, id: pay.id, status: applied.status || m.status,
+    ...(b.method === "pix" ? { pix: { code: patch.pix_code, qr_base64: patch.pix_qr, expires_at: patch.pix_expires_at } } : {}) });
 }
 
 // ---------- confirmação do pagamento (nunca confia no navegador) ----------
@@ -431,13 +477,16 @@ async function mpWebhook({ request, env, ctx }) {
   if (!valid) { console.error("webhook: assinatura inválida", JSON.stringify({ dataId: dataId ? String(dataId) : null, type })); return json(401, { error: "assinatura inválida" }); }
   if (type !== "payment") return json(200, { ok: true, ignorado: true });
   try {
-    // Pagamento de contratação pertence à conta do palestrante: o aviso traz o user_id dele.
-    let token = env.MP_ACCESS_TOKEN;
+    // Contratação: o pagamento pertence à conta do palestrante, então consultamos com o token dele.
+    if (!/^\d{3,20}$/.test(String(dataId || ""))) return json(200, { ok: true, ignorado: true });
+    const known = await one(env, `/rest/v1/payments?mp_payment_id=eq.${dataId}&select=split,speaker_id`);
+    let token = known ? await tokenForPayment(env, known) : env.MP_ACCESS_TOKEN;
     const sellerId = body && body.user_id != null ? String(body.user_id) : "";
-    if (/^\d{3,20}$/.test(sellerId)) {
+    if (!known && /^\d{3,20}$/.test(sellerId)) {
       const acc = await one(env, `/rest/v1/speaker_mp_accounts?mp_user_id=eq.${sellerId}&select=speaker_id`);
       if (acc) token = (await sellerToken(env, acc.speaker_id)) || token;
     }
+    if (!token) return json(200, { ok: true, ignorado: "sem-token" });
     const mp = await fetchPayment(env, dataId, token);
     const r = await applyPayment(env, request, mp, ctx);
     console.log("webhook", JSON.stringify({ dataId: String(dataId), mpStatus: mp.status, resultado: r.reason }));
@@ -448,29 +497,27 @@ async function mpWebhook({ request, env, ctx }) {
   return json(200, { ok: true });
 }
 
-// ---------- GET /api/pagamento?id=...&payment_id=... ----------
+// ---------- GET /api/pagamento?id=... ----------
+// O app consulta enquanto mostra o Pix. Se o aviso do Mercado Pago atrasar, confirmamos direto na API.
 async function pagamentoGet({ request, env, ctx }) {
   if (!configured(env)) return json(503, { error: "Servidor não configurado." });
-  const q = new URL(request.url).searchParams;
-  const id = q.get("id") || "";
+  const id = new URL(request.url).searchParams.get("id") || "";
   if (!UUID.test(id)) return json(400, { error: "Pagamento inválido." });
-  const pay = await one(env, `/rest/v1/payments?id=eq.${id}&select=id,kind,status,split,speaker_id`);
-  if (!pay) return json(404, { error: "Pagamento não encontrado." });
+  const me = await currentUser(request, env);
+  if (!me) return json(401, { error: "Entre na sua conta para continuar." });
+  const pay = await one(env, `/rest/v1/payments?id=eq.${id}&select=id,kind,status,split,speaker_id,user_id,mp_payment_id`);
+  if (!pay || (pay.user_id !== me.id && me.profile.role !== "admin")) return json(404, { error: "Pagamento não encontrado." });
   let status = pay.status;
-  // Na volta do Mercado Pago a URL traz payment_id: confirmamos direto na API (o navegador não decide nada).
-  const pid = q.get("payment_id") || "";
-  if (status !== "paid" && /^\d{5,20}$/.test(pid) && env.MP_ACCESS_TOKEN) {
+  if (status === "pending" && pay.mp_payment_id) {
     try {
-      const mp = await fetchPayment(env, pid, await tokenForPayment(env, pay));
-      if (String(mp.external_reference) === id) {
-        const r = await applyPayment(env, request, mp, ctx);
-        if (r.status) status = r.status;
+      const token = await tokenForPayment(env, pay);
+      if (token) {
+        const mp = await fetchPayment(env, pay.mp_payment_id, token);
+        if (String(mp.external_reference) === id) { const r = await applyPayment(env, request, mp, ctx); if (r.status) status = r.status; }
       }
-    } catch (e) {
-      console.error("retorno: falha ao consultar o pagamento:", e && e.message);
-    }
+    } catch (e) { console.error("consulta do pagamento falhou:", e && e.message); }
   }
-  return json(200, { status, kind: pay.kind }); // só o status; nada de dados pessoais
+  return json(200, { status, kind: pay.kind });
 }
 
 // ---------- POST /api/aviso (vem do Supabase) ----------
@@ -601,8 +648,8 @@ async function contaDelete({ request, env }) {
 
 // ---------- roteador ----------
 const routes = {
-  "/api/selo": { POST: seloPost },
-  "/api/pagar": { POST: pagarPost },
+  "/api/mp/config": { GET: mpConfigGet },
+  "/api/mp/pagar": { POST: pagarPost },
   "/api/pagamento": { GET: pagamentoGet },
   "/api/mp-webhook": { POST: mpWebhook },
   "/api/aviso": { POST: avisoPost },

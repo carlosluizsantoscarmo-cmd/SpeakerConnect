@@ -1,5 +1,4 @@
 User-agent: *
 Disallow: /app/
 Disallow: /equipe/
-Disallow: /pagamento.html
 Sitemap: https://speakerconnect.com.br/sitemap.xml
