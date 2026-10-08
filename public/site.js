@@ -93,6 +93,99 @@
   }
   window.SCsite.svg = svg;
 
+  // ---------- menu de temas (barra fixa com painel ao passar o mouse) ----------
+  // Cada item busca no catálogo pelos termos "k" (qualquer um deles); o título da coluna filtra pelo tema "cat".
+  function I(l, k) { return { l: l, k: k || [l] }; }
+  var MENU = [
+    { n: "SIPAT e Segurança", i: "shield", cols: [
+      { t: "Segurança do Trabalho", cat: "Segurança do Trabalho e SIPAT", items: [I("SIPAT", ["sipat"]), I("Prevenção de acidentes", ["acidente"]), I("Comportamento seguro", ["comportamento seguro", "cultura de seguranca"]), I("EPI e EPC", ["epi"]), I("CIPA", ["cipa"]), I("Trabalho em altura", ["altura"]), I("Ergonomia", ["ergonomia"]), I("Primeiros socorros", ["socorro"])] },
+      { t: "Saúde na SIPAT", cat: "Saúde e Bem-Estar", items: [I("Álcool e drogas", ["alcool", "droga", "dependencia"]), I("Prevenção de doenças", ["prevencao", "ist", "doenca"]), I("Qualidade de vida", ["qualidade de vida"]), I("Assédio moral e sexual", ["assedio"]), I("Trânsito seguro", ["transito"])] }
+    ] },
+    { n: "Liderança e Gestão", i: "flag", cols: [
+      { t: "Liderança", cat: "Liderança", items: [I("Liderança de equipes", ["lideranca", "lider"]), I("Gestão de conflitos", ["conflito"]), I("Feedback", ["feedback"]), I("Tomada de decisão", ["decisao"]), I("Gestão do tempo", ["tempo", "produtividade"])] },
+      { t: "Gestão de Pessoas e RH", cat: "Gestão de Pessoas e RH", items: [I("Cultura organizacional", ["cultura"]), I("Engajamento", ["engajamento"]), I("Clima organizacional", ["clima"]), I("Trabalho em equipe", ["equipe"]), I("Atendimento ao cliente", ["atendimento"])] }
+    ] },
+    { n: "Motivação", i: "flame", cols: [
+      { t: "Motivacional", cat: "Motivacional", items: [I("Motivação", ["motiva"]), I("Superação", ["supera"]), I("Resiliência", ["resilien"]), I("Propósito", ["proposito"]), I("Mudança e adaptação", ["mudanca", "adapta"]), I("Autoconhecimento", ["autoconhecimento"])] }
+    ] },
+    { n: "Saúde e Bem-estar", i: "heart", cols: [
+      { t: "Saúde Mental", cat: "Saúde Mental", items: [I("Ansiedade", ["ansiedade"]), I("Burnout e estresse", ["burnout", "estresse", "stress"]), I("Setembro Amarelo", ["setembro amarelo", "suicidio"]), I("Inteligência emocional", ["emocional"])] },
+      { t: "Saúde e Bem-Estar", cat: "Saúde e Bem-Estar", items: [I("Alimentação saudável", ["alimenta", "nutri"]), I("Sono", ["sono"]), I("Atividade física", ["atividade fisica", "exercicio"]), I("Outubro Rosa e Novembro Azul", ["outubro rosa", "novembro azul", "cancer"])] }
+    ] },
+    { n: "Vendas e Marketing", i: "trend", cols: [
+      { t: "Vendas", cat: "Vendas", items: [I("Técnicas de vendas", ["venda"]), I("Negociação", ["negocia"]), I("Convenção de vendas", ["convencao"]), I("Experiência do cliente", ["cliente"])] },
+      { t: "Marketing", cat: "Marketing", items: [I("Marketing digital", ["marketing digital", "digital"]), I("Marca pessoal", ["marca pessoal", "personal branding"]), I("Redes sociais", ["redes sociais", "instagram", "linkedin"])] }
+    ] },
+    { n: "Comunicação", i: "mic", cols: [
+      { t: "Comunicação e Oratória", cat: "Comunicação e Oratória", items: [I("Oratória", ["oratoria", "falar em publico"]), I("Comunicação não violenta", ["nao violenta", "cnv"]), I("Storytelling", ["storytelling", "historia"]), I("Comunicação interna", ["comunicacao interna"])] }
+    ] },
+    { n: "Inovação", i: "bulb", cols: [
+      { t: "Tecnologia e Inovação", cat: "Tecnologia e Inovação", items: [I("Inteligência artificial", ["inteligencia artificial"]), I("Transformação digital", ["transformacao digital"]), I("Futuro do trabalho", ["futuro"]), I("Criatividade", ["criativ"]), I("Segurança da informação", ["seguranca da informacao", "ciber", "lgpd"])] }
+    ] },
+    { n: "Negócios e Finanças", i: "coins", cols: [
+      { t: "Empreendedorismo", cat: "Empreendedorismo", items: [I("Abrir o próprio negócio", ["empreend", "negocio"]), I("Gestão de pequenas empresas", ["pequena", "gestao"]), I("Intraempreendedorismo", ["intraempreend"])] },
+      { t: "Finanças", cat: "Finanças", items: [I("Educação financeira", ["financeira", "financas"]), I("Planejamento financeiro", ["planejamento"]), I("Investimentos", ["investimento"])] }
+    ] },
+    { n: "ESG e Sociedade", i: "leaf", cols: [
+      { t: "Meio Ambiente e ESG", cat: "Meio Ambiente e ESG", items: [I("Sustentabilidade", ["sustentab"]), I("ESG na prática", ["esg"]), I("Meio ambiente", ["ambient"])] },
+      { t: "Pessoas e direitos", cat: "Diversidade e Inclusão", items: [I("Diversidade e inclusão", ["diversidade", "inclus"]), I("Equidade de gênero", ["genero", "mulher"]), I("Ética e compliance", ["etica", "compliance"]), I("Direito do trabalho", ["direito", "trabalhista"])] }
+    ] },
+    { n: "Educação", i: "book", cols: [
+      { t: "Educação", cat: "Educação", items: [I("Formação de professores", ["professor", "docente"]), I("Família e escola", ["familia", "escola"]), I("Jovens e carreira", ["jovem", "carreira"])] }
+    ] }
+  ];
+  var KW = {};
+  MENU.forEach(function (g) { g.cols.forEach(function (c) { c.items.forEach(function (it) { KW[norm(it.l)] = it.k.map(norm); }); }); });
+  window.SCsite.menuTerms = function (q) { var t = norm(q).trim(); return KW[t] || (t ? [t] : []); };
+
+  function catbar() {
+    var box = $("#catbar");
+    if (!box) return;
+    var home = !!$("#grid");
+    function href(p) { return "/?" + p + "#palestrantes"; }
+    box.className = "catbar";
+    box.innerHTML = '<div class="wrap"><ul class="cb-row" role="list">' + MENU.map(function (g, gi) {
+      return '<li><button type="button" class="cb-top" data-g="' + gi + '" aria-expanded="false" aria-controls="cb-panel">' +
+        '<span class="cb-ic">' + svg(g.i, 26) + "</span><span>" + e(g.n) + "</span></button></li>";
+    }).join("") + '</ul></div><div class="cb-panel" id="cb-panel" hidden></div>';
+    var panel = box.querySelector(".cb-panel"), tops = box.querySelectorAll(".cb-top"), open = -1, timer = null;
+    function show(gi) {
+      clearTimeout(timer);
+      if (gi === open) return;
+      open = gi;
+      tops.forEach(function (b, i) { b.classList.toggle("on", i === gi); b.setAttribute("aria-expanded", i === gi ? "true" : "false"); });
+      if (gi < 0) { panel.hidden = true; return; }
+      var g = MENU[gi];
+      panel.innerHTML = '<div class="wrap"><div class="cb-cols">' + g.cols.map(function (c) {
+        return '<div class="cb-col"><a class="cb-h" href="' + href("tema=" + encodeURIComponent(c.cat)) + '" data-cat="' + e(c.cat) + '">' + e(c.t) + "</a><ul role=\"list\">" +
+          c.items.map(function (it) { return '<li><a href="' + href("q=" + encodeURIComponent(it.l)) + '" data-q="' + e(it.l) + '">' + e(it.l) + "</a></li>"; }).join("") + "</ul></div>";
+      }).join("") + '<div class="cb-col cb-help"><b>Não achou o tema?</b><p>Conte o que o seu evento precisa e a nossa equipe indica palestrantes.</p>' +
+        (C.whatsapp ? '<a class="btn spot" target="_blank" rel="noopener" href="https://wa.me/' + e(C.whatsapp) + "?text=" + encodeURIComponent("Olá! Procuro um palestrante sobre " + g.n.toLowerCase() + " para o meu evento.") + '">Pedir indicação</a>' : "") +
+        "</div></div></div>";
+      panel.hidden = false;
+    }
+    function later() { clearTimeout(timer); timer = setTimeout(function () { show(-1); }, 220); }
+    tops.forEach(function (b) {
+      var gi = +b.getAttribute("data-g");
+      b.addEventListener("mouseenter", function () { if (window.matchMedia("(hover: hover)").matches) show(gi); });
+      b.addEventListener("click", function () {
+        // no computador o mouse já abriu o painel; no celular o toque abre e fecha
+        if (window.matchMedia("(hover: hover)").matches) show(gi); else show(open === gi ? -1 : gi);
+      });
+    });
+    box.addEventListener("mouseleave", function () { if (window.matchMedia("(hover: hover)").matches) later(); });
+    box.addEventListener("mouseenter", function () { clearTimeout(timer); });
+    document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && open >= 0) { var b = tops[open]; show(-1); b.focus(); } });
+    document.addEventListener("click", function (ev) { if (open >= 0 && !box.contains(ev.target)) show(-1); });
+    panel.addEventListener("click", function (ev) {
+      var a = ev.target.closest("a[data-q],a[data-cat]");
+      if (!a || !home || !window.SCsite.filter) return;
+      ev.preventDefault();
+      show(-1);
+      window.SCsite.filter(a.getAttribute("data-q") || "", a.getAttribute("data-cat") || "");
+    });
+  }
+
   // ---------- cartão do palestrante ----------
   function fmtLabel(s) { return (s.formats || []).length === 2 ? "Presencial e online" : (s.formats || [])[0] === "online" ? "Online" : "Presencial"; }
   function card(s) {
@@ -136,25 +229,35 @@
       });
     }
     function apply() {
-      var t = norm(q.value).trim(), c = cat.value, u = uf.value, f = fmt.value;
+      var t = norm(q.value).trim(), terms = window.SCsite.menuTerms(q.value), c = cat.value, u = uf.value, f = fmt.value;
       var list = all.filter(function (s) {
         if (c && (s.categories || []).indexOf(c) < 0) return false;
         if (u && s.uf !== u) return false;
         if (f && (s.formats || []).indexOf(f) < 0) return false;
-        if (t && norm([s.public_name, s.headline, s.topics, (s.categories || []).join(" "), s.city].join(" ")).indexOf(t) < 0) return false;
+        if (t) {
+          var hay = " " + norm([s.public_name, s.headline, s.topics, s.bio, (s.categories || []).join(" "), s.city].join(" ")) + " ";
+          if (!terms.some(function (k) { return hay.indexOf(k) > -1; })) return false;
+        }
         return true;
       });
       themes();
+      var want = q.value || c;
+      var wa = C.whatsapp && want ? '<a class="btn spot" target="_blank" rel="noopener" href="https://wa.me/' + e(C.whatsapp) + "?text=" + encodeURIComponent("Olá! Procuro um palestrante sobre " + want + " para o meu evento.") + '">Pedir indicação à equipe</a>' : "";
       if (!all.length) {
-        grid.innerHTML = '<div class="empty"><h3>Os primeiros palestrantes estão chegando</h3><p class="muted">Estamos aprovando os perfis. Se você é palestrante, crie sua conta e saia na frente.</p><a class="btn" href="/app/#/cadastro?tipo=palestrante">Quero ser palestrante</a></div>';
+        grid.innerHTML = '<div class="empty"><h3>Os primeiros palestrantes estão chegando</h3><p class="muted">Estamos aprovando os perfis.' + (want ? " Enquanto isso, nossa equipe indica um palestrante sobre " + e(want) + " para o seu evento." : " Se você é palestrante, crie sua conta e saia na frente.") + '</p><div class="row-btns">' + wa + '<a class="btn' + (wa ? " line" : "") + '" href="/app/#/cadastro?tipo=palestrante">Quero ser palestrante</a></div></div>';
         return;
       }
       grid.innerHTML = list.length ? list.map(card).join("") :
-        '<div class="empty"><h3>Nenhum palestrante com esses filtros</h3><p class="muted">Tente outro tema ou tire o filtro de estado.</p><button class="btn line" type="button" id="clear">Limpar filtros</button></div>';
+        '<div class="empty"><h3>Nenhum palestrante com esses filtros</h3><p class="muted">' + (want ? "Ainda não temos perfis publicados sobre " + e(want) + ". Nossa equipe pode indicar um palestrante para o seu evento." : "Tente outro tema ou tire o filtro de estado.") + '</p><div class="row-btns">' + wa + '<button class="btn line" type="button" id="clear">Limpar filtros</button></div></div>';
       var cl = $("#clear");
       if (cl) cl.onclick = function () { q.value = ""; cat.value = ""; uf.value = ""; fmt.value = ""; apply(); };
     }
     [q, cat, uf, fmt].forEach(function (el) { el.addEventListener("input", apply); });
+    window.SCsite.filter = function (text, theme) {
+      q.value = text || ""; cat.value = theme && cats.indexOf(theme) > -1 ? theme : "";
+      if (theme && !cat.value) q.value = theme;
+      apply(); $("#palestrantes").scrollIntoView();
+    };
     var hero = $("#hero-find");
     if (hero) hero.addEventListener("submit", function (ev) {
       ev.preventDefault(); q.value = $("#hero-q").value; apply();
@@ -166,7 +269,9 @@
     sb.from("categories").select("name").eq("active", true).order("sort").then(function (r) {
       cats = (r.data || []).map(function (c) { return c.name; });
       cats.forEach(function (c) { var o = document.createElement("option"); o.value = o.textContent = c; cat.appendChild(o); });
-      var pre = new URLSearchParams(location.search).get("tema"); if (pre) cat.value = pre;
+      var sp = new URLSearchParams(location.search), pre = sp.get("tema"), pq = sp.get("q");
+      if (pre) { if (cats.indexOf(pre) > -1) cat.value = pre; else q.value = pre; }
+      if (pq) q.value = pq;
       apply();
     });
     sb.from("speakers").select(COLS).eq("status", "approved").order("updated_at", { ascending: false }).limit(500).then(function (r) {
@@ -221,5 +326,5 @@
     });
   }
 
-  document.addEventListener("DOMContentLoaded", function () { chrome(); catalog(); profile(); });
+  document.addEventListener("DOMContentLoaded", function () { chrome(); catbar(); catalog(); profile(); });
 })();

@@ -251,3 +251,26 @@ footer nav{display:flex;gap:18px;flex-wrap:wrap}
   .find input{padding:0 12px;font-size:16px}
   .find .btn{padding:12px 16px}
 }
+
+/* menu de temas (barra fixa) */
+.catbar{position:sticky;top:66px;z-index:19;background:#fff;border-bottom:1px solid var(--line)}
+.cb-row{list-style:none;margin:0;padding:6px 0;display:flex;justify-content:center;gap:2px;overflow-x:auto;scrollbar-width:none}
+.cb-row::-webkit-scrollbar{display:none}
+.cb-top{display:flex;flex-direction:column;align-items:center;gap:4px;width:104px;padding:8px 6px;border:0;border-radius:12px;background:none;color:var(--mut);font:500 13px/1.25 var(--f-body);text-align:center;cursor:pointer}
+.cb-ic{color:var(--stage);display:grid;place-items:center;width:38px;height:38px;border-radius:12px;transition:background .15s ease,color .15s ease}
+.cb-top:hover,.cb-top.on{background:#FFF6DC;color:var(--ink)}
+.cb-top:hover .cb-ic,.cb-top.on .cb-ic{background:var(--spot);color:var(--stage)}
+.cb-panel{position:absolute;left:0;right:0;top:100%;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 18px 30px rgba(22,21,47,.12);max-height:calc(100vh - 180px);overflow:auto}
+.cb-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:24px 32px;padding:24px 0 28px}
+.cb-col ul{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column}
+.cb-col li a{display:block;padding:7px 0;color:var(--mut);text-decoration:none;font-size:15.5px}
+.cb-col li a:hover{color:var(--brand-ink);text-decoration:underline}
+.cb-h{font:700 18px var(--f-body);color:var(--ink);text-decoration:none}
+.cb-h:hover{color:var(--brand-ink)}
+.cb-help{background:var(--paper);border-radius:var(--r-md);padding:18px 18px 20px;align-self:start}
+.cb-help b{font-size:16px}.cb-help p{margin:6px 0 14px;color:var(--mut);font-size:14.5px;line-height:1.45}
+.cb-help .btn{padding:10px 18px;font-size:15px}
+.row-btns{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+@media (max-width:980px){.cb-row{justify-content:flex-start}.cb-top{width:92px;flex:none}}
+@media (max-width:640px){.cb-top{width:84px;font-size:12px}.cb-ic{width:34px;height:34px}.cb-cols{grid-template-columns:1fr 1fr;gap:18px 20px;padding:18px 0 22px}.cb-help{grid-column:1 / -1}}
+section[id]{scroll-margin-top:170px}
