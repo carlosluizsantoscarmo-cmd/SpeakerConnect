@@ -86,6 +86,7 @@ reset role;
 -- ---------- equipe aprova ----------
 set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
 select tst.ok('equipe aprova palestrante', $$update speakers set status='approved' where id='00000000-0000-0000-0000-000000000001'$$);
+select tst.no('empresa com telefone no nome', $$update companies set company_name='Empresa 27 99999-0000' where id='00000000-0000-0000-0000-000000000003'$$);
 select tst.eq('equipe vê todos os perfis', $$select count(*)::text from profiles$$, '5');
 select tst.eq('equipe vê o documento', $$select doc_type from speaker_documents$$, 'CNH');
 select tst.eq('equipe abre o arquivo do documento', $$select count(*)::text from storage.objects where bucket_id='documentos'$$, '1');
@@ -114,6 +115,25 @@ select tst.eq('nome da empresa preenchido sozinho', $$select company_name from q
 select tst.no('empresa não aceita sem proposta', $$update quotes set status='accepted'$$);
 select tst.ok('empresa ajusta o pedido antes da proposta', $$update quotes set audience=250$$);
 select tst.ok('empresa manda mensagem', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','Olá, Ana!')$$);
+-- sem troca de contato antes do pagamento
+select tst.no('chat barra telefone', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','me chama no 27 99613-3207')$$);
+select tst.no('chat barra telefone com pontos', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','(27) 9.9.6.1.3-3207')$$);
+select tst.no('chat barra telefone por extenso', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','nove nove seis um tres tres dois zero sete')$$);
+select tst.no('chat barra telefone fixo', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','liga no 3225-8687')$$);
+select tst.no('chat barra e-mail', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','joao.silva@empresa.com.br')$$);
+select tst.no('chat barra e-mail disfarçado', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','joao arroba gmail ponto com')$$);
+select tst.no('chat barra @ de rede social', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','me segue @joaosilva')$$);
+select tst.no('chat barra link', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','veja www.empresa.com.br')$$);
+select tst.no('chat barra dominio solto', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','site empresaboa.com')$$);
+select tst.no('chat barra whatsapp', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','me chama no zap')$$);
+select tst.no('chat barra rede social citada', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','me procura no insta')$$);
+select tst.no('chat barra pagamento por fora', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','podemos acertar por fora?')$$);
+select tst.ok('chat aceita mensagem normal com data e números', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','O evento é dia 20/11/2026 às 14h, para 250 pessoas, 2 horas. Orçamento até R$ 8.000,00. Pode ser por Pix pela plataforma?')$$);
+select tst.ok('chat aceita citar o site da plataforma', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','vi seu perfil no speakerconnect.com.br')$$);
+select tst.no('pedido com telefone na mensagem', $$update quotes set message='ligar 27 99999-0000'$$);
+select tst.ok('registra tentativa', $$select log_contact_attempt('chat', 'me chama no zap', '10000000-0000-0000-0000-000000000001')$$);
+select tst.ok('não registra texto limpo', $$select log_contact_attempt('chat', 'bom dia', '10000000-0000-0000-0000-000000000001')$$);
+select tst.eq('empresa não lê as tentativas', $$select count(*)::text from contact_attempts$$, '0');
 select tst.no('mensagem com remetente falso', $$insert into quote_messages(quote_id, sender_id, body) values ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','Sou a Ana')$$);
 select tst.eq('contato ainda escondido', $$select count(*)::text from quote_contacts('10000000-0000-0000-0000-000000000001')$$, '0');
 reset role;
@@ -135,7 +155,18 @@ reset role;
 
 -- ---------- Ana responde ----------
 set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000001', false);
-select tst.eq('palestrante vê a empresa que pediu', $$select company_name from companies$$, 'Empresa Boa');
+select tst.eq('palestrante não vê site nem CNPJ da empresa', $$select count(*)::text from companies$$, '0');
+select tst.eq('palestrante vê o nome da empresa no pedido', $$select company_name from quotes$$, 'Empresa Boa');
+select tst.no('proposta com telefone', $$update quotes set status='proposed', amount_cents=800000, speaker_note='me liga 27 99999-0001'$$);
+select tst.no('chat do palestrante barra e-mail', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','ana@palestras.com')$$);
+select tst.no('perfil público barra e-mail na bio', $$update speakers set bio = bio || ' Contato: ana@palestras.com' where id=auth.uid()$$);
+select tst.no('perfil público barra telefone na frase', $$update speakers set headline='Liderança - 27 99999-0001' where id=auth.uid()$$);
+select tst.ok('perfil aceita palestra sobre Instagram', $$update speakers set topics='Instagram para negócios' where id=auth.uid()$$);
+select tst.ok('rede social não é publicada', $$update speakers set instagram='@ana', linkedin='https://linkedin.com/in/ana' where id=auth.uid()$$);
+select tst.no('vídeo fora do YouTube/Vimeo', $$update speakers set video_url='https://wa.me/5527999990001' where id=auth.uid()$$);
+select tst.ok('vídeo do YouTube', $$update speakers set video_url='https://www.youtube.com/watch?v=abcdefghijk' where id=auth.uid()$$);
+select tst.no('foto de fora do app', $$update speakers set photo_url='https://exemplo.com/eu.jpg' where id=auth.uid()$$);
+select tst.eq('rede social fica vazia', $$select coalesce(instagram,'') || coalesce(linkedin,'') from speakers where id=auth.uid()$$, '');
 select tst.no('palestrante não muda a data do evento', $$update quotes set event_date='2026-12-01'$$);
 select tst.no('palestrante não marca como pago', $$update quotes set status='paid'$$);
 select tst.no('proposta sem valor', $$update quotes set status='proposed'$$);
@@ -163,6 +194,7 @@ reset role;
 
 set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000003', false);
 select tst.eq('contato liberado após pagamento', $$select speaker_phone from quote_contacts('10000000-0000-0000-0000-000000000001')$$, '27999990001');
+select tst.ok('depois do pagamento o chat fica livre', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','meu whats é 27 99999-0000')$$);
 select tst.eq('empresa vê o próprio pagamento', $$select count(*)::text from payments$$, '1');
 select tst.no('empresa não altera pagamento', $$update payments set status='refunded'$$);
 select tst.ok('empresa marca evento como realizado', $$update quotes set status='done'$$);
@@ -197,6 +229,10 @@ reset role;
 select set_config('request.jwt.claim.sub', '', false);
 set role anon;
 select tst.no('visitante não consulta conexão', $$select mp_connected('00000000-0000-0000-0000-000000000001')$$);
+reset role;
+
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+select tst.eq('equipe vê as tentativas', $$select count(*)::text from contact_attempts$$, '1');
 reset role;
 
 -- ---------- exclusão de conta mantém o registro financeiro ----------

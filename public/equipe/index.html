@@ -78,6 +78,7 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     <button data-t="pagamentos">Pagamentos<span class="n" id="n-rep" hidden></span></button>
     <button data-t="empresas">Empresas</button>
     <button data-t="temas">Temas</button>
+    <button data-t="alertas">Alertas<span class="n" id="n-al" hidden></span></button>
   </nav>
   <span class="who" id="who"></span>
 </div></header>
@@ -164,17 +165,21 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
       sb.from("quotes").select("*").order("created_at", { ascending: false }).limit(2000),
       sb.from("payments").select("*").order("created_at", { ascending: false }).limit(2000),
       sb.from("categories").select("*").order("sort"),
-      sb.from("speaker_documents").select("*").limit(3000)
+      sb.from("speaker_documents").select("*").limit(3000),
+      sb.from("contact_attempts").select("*").order("created_at", { ascending: false }).limit(500)
     ]).then(function (r) {
       var bad = r.filter(function (x) { return x.error; })[0];
       if (bad) throw bad.error;
       data = { speakers: r[0].data, profiles: r[1].data, companies: r[2].data, quotes: r[3].data, payments: r[4].data, categories: r[5].data, docs: {} };
       (r[6].data || []).forEach(function (x) { data.docs[x.speaker_id] = x; });
+      data.attempts = r[7].data || [];
       data.prof = {}; data.profiles.forEach(function (p) { data.prof[p.id] = p; });
       var pend = data.speakers.filter(function (s) { return s.status === "pending"; }).length;
       var rep = data.payments.filter(function (p) { return p.kind === "quote" && p.status === "paid" && !p.payout_done_at; }).length;
       $("n-pend").hidden = !pend; $("n-pend").textContent = pend;
       $("n-rep").hidden = !rep; $("n-rep").textContent = rep;
+      var al = data.attempts.filter(function (a) { return Date.now() - new Date(a.created_at) < 7 * 864e5; }).length;
+      $("n-al").hidden = !al; $("n-al").textContent = al;
     });
   }
   function refresh() { return loadAll().then(render).catch(function (err) { main.innerHTML = '<div class="err">Erro ao carregar: ' + e(err.message) + "</div>"; }); }
@@ -195,7 +200,7 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
         '<div class="sub">' + e(p.email || "") + (p.phone ? " · " + e(p.phone) : "") + "</div>" +
         (s.headline ? '<div class="sub">' + e(s.headline) + "</div>" : "") +
         '<details class="more"><summary>Ver perfil completo</summary><p>' + e(s.bio || "(sem apresentação)") + "</p>" + (s.topics ? "<p>" + e(s.topics) + "</p>" : "") +
-        (s.video_url ? '<p><a href="' + e(s.video_url) + '" target="_blank" rel="noopener">Vídeo</a></p>' : "") + (s.linkedin ? '<p><a href="' + e(s.linkedin) + '" target="_blank" rel="noopener">LinkedIn</a></p>' : "") +
+        (s.video_url ? '<p><a href="' + e(s.video_url) + '" target="_blank" rel="noopener">Vídeo</a></p>' : "") +
         "<p>Valor de referência: " + (s.fee_from_cents ? brl(s.fee_from_cents) : "—") + "</p></details>" + docLine(s.id) + "</div></div></td>" +
         '<td class="hide">' + e((s.categories || []).join(", ")) + '<div class="sub">' + e([s.city, s.uf].filter(Boolean).join("/")) + " · " + e((s.formats || []).join(" e ")) + "</div></td>" +
         '<td><span class="pill ' + st[1] + '">' + st[0] + '</span><div class="sub">Atualizado ' + d(s.updated_at) + "</div>" + (s.review_note && s.status !== "approved" ? '<div class="sub">Nota: ' + e(s.review_note) + "</div>" : "") + "</td>" +
@@ -355,9 +360,30 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     });
   }
 
+  // ---------- alertas: tentativas de trocar contato antes do pagamento ----------
+  function screenAlerts() {
+    var a = data.attempts, FL = { chat: "Chat", pedido: "Pedido", proposta: "Proposta", perfil: "Perfil", empresa: "Empresa" };
+    var count = {}; a.forEach(function (x) { count[x.user_id] = (count[x.user_id] || 0) + 1; });
+    var html = '<div class="bar"><h1 class="grow">Alertas</h1><span style="color:var(--mut)">Tentativas de passar contato antes do pagamento. A mensagem foi bloqueada e não chegou à outra parte.</span></div>';
+    if (!a.length) html += '<div class="empty">Nenhuma tentativa registrada.</div>';
+    else html += '<div class="scroll"><table><thead><tr><th>Quando</th><th>Quem</th><th>Onde</th><th>Texto bloqueado</th><th></th></tr></thead><tbody>' + a.map(function (x) {
+      var p = data.prof[x.user_id] || {}, q = x.quote_id ? data.quotes.filter(function (k) { return k.id === x.quote_id; })[0] : null;
+      return "<tr><td>" + e(new Date(x.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })) + "</td>" +
+        "<td><b>" + e(p.name || "Conta excluída") + "</b>" + '<div class="sub">' + e(p.role === "speaker" ? "Palestrante" : p.role === "company" ? "Empresa" : "") + (p.email ? " · " + e(p.email) : "") + "</div>" +
+        (count[x.user_id] > 2 ? '<span class="pill err">' + count[x.user_id] + " tentativas</span>" : "") + "</td>" +
+        "<td>" + e(FL[x.field] || x.field) + (q ? '<div class="sub">' + e(q.title) + "</div>" : "") + "</td>" +
+        '<td style="max-width:420px;white-space:pre-wrap">' + e(x.body) + "</td>" +
+        '<td><button class="ghost" data-del="' + e(x.id) + '" style="padding:6px 12px;font-size:13px">Apagar</button></td></tr>';
+    }).join("") + "</tbody></table></div>";
+    main.innerHTML = html;
+    main.querySelectorAll("[data-del]").forEach(function (b) {
+      b.onclick = function () { sb.from("contact_attempts").delete().eq("id", b.getAttribute("data-del")).then(function (r) { if (!fail(r)) refresh(); }); };
+    });
+  }
+
   function render() {
     document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-t") === tab); });
-    ({ palestrantes: screenSpeakers, pedidos: screenQuotes, pagamentos: screenPayments, empresas: screenCompanies, temas: screenThemes })[tab]();
+    ({ palestrantes: screenSpeakers, pedidos: screenQuotes, pagamentos: screenPayments, empresas: screenCompanies, temas: screenThemes, alertas: screenAlerts })[tab]();
   }
 
   function start(session) {

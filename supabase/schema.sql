@@ -394,11 +394,11 @@ create policy speakers_update on public.speakers for update to authenticated
 drop policy if exists speakers_delete on public.speakers;
 create policy speakers_delete on public.speakers for delete to authenticated using (public.is_admin());
 
--- companies: a própria empresa, a equipe e o palestrante que recebeu pedido dela.
+-- companies: só a própria empresa e a equipe. O palestrante vê apenas o nome da empresa no pedido
+-- (site e CNPJ levariam ao contato antes do pagamento).
 drop policy if exists companies_read on public.companies;
 create policy companies_read on public.companies for select to authenticated
-  using (id = auth.uid() or public.is_admin()
-         or exists (select 1 from public.quotes q where q.company_id = companies.id and q.speaker_id = auth.uid()));
+  using (id = auth.uid() or public.is_admin());
 drop policy if exists companies_update on public.companies;
 create policy companies_update on public.companies for update to authenticated
   using (id = auth.uid() or public.is_admin()) with check (id = auth.uid() or public.is_admin());
@@ -648,6 +648,150 @@ create policy fotos_update on storage.objects for update to authenticated
 drop policy if exists fotos_delete on storage.objects;
 create policy fotos_delete on storage.objects for delete to authenticated
   using (bucket_id = 'fotos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------- sem troca de contato antes do pagamento ----------
+-- Telefone, e-mail, redes sociais, links e combinados "por fora" são recusados em tudo o que a
+-- outra parte lê antes do pagamento: chat, pedido, proposta e perfil público do palestrante.
+create or replace function private.has_contact(t text, strict boolean default true) returns boolean
+language plpgsql immutable set search_path = '' as $$
+declare s text; d text;
+begin
+  if t is null or t = '' then return false; end if;
+  s := translate(lower(t), 'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn');
+  s := replace(s, 'speakerconnect.com.br', ' ');
+  -- e-mail (inclusive "fulano arroba gmail ponto com")
+  if s ~ '[a-z0-9._%+-]+\s*(@|\(at\)|\[at\]|\marroba\M)\s*[a-z0-9-]+\s*(\.|\(dot\)|\mponto\M)\s*[a-z]{2,}' then return true; end if;
+  -- links e domínios
+  if s ~ '(https?:|www\.|wa\.me|api\.whatsapp|bit\.ly|linktr\.ee|t\.me/|instagram\.com|linkedin\.com|facebook\.com|tiktok\.com|youtube\.com/@)' then return true; end if;
+  if s ~ '\m[a-z0-9-]{2,}\s*\.\s*(com|net|org|br|me|io|app|site|online|link|bio)\M' then return true; end if;
+  -- @ de rede social
+  if s ~ '(^|[^a-z0-9._])@[a-z0-9._]{3,}' then return true; end if;
+  -- palavras de contato ou de pagamento por fora
+  if s ~ '\m(whats\s*app|whatsapp|whats|wpp|zap|zapzap|telegram|e-?mail|gmail|hotmail|outlook|telefone|celular|ligacao|me liga|me ligue|liga pra mim|ligo pra voce|(meu|seu|teu) (contato|numero|zap|whats|fone|celular|email)|passa (o|seu|teu) (contato|numero)|numero de contato|contato direto|chave pix|meu pix|por fora|fora da plataforma|fora do app|fora do site|deposito em conta|conta bancaria|direto comigo|sem a plataforma)\M' then return true; end if;
+  -- no chat e no pedido, citar a rede social também conta ("me chama no insta"); no perfil público, não
+  -- (o palestrante pode ter uma palestra sobre Instagram ou LinkedIn)
+  if strict and s ~ '\m(instagram|insta|ig|linkedin|facebook|fb|tiktok|youtube|direct|dm|inbox|skype|signal)\M' then return true; end if;
+  -- números por extenso viram dígitos ("nove nove seis...")
+  d := s;
+  d := regexp_replace(d, '\mzero\M', '0', 'g');  d := regexp_replace(d, '\m(um|uma)\M', '1', 'g');
+  d := regexp_replace(d, '\m(dois|duas)\M', '2', 'g'); d := regexp_replace(d, '\mtres\M', '3', 'g');
+  d := regexp_replace(d, '\mquatro\M', '4', 'g'); d := regexp_replace(d, '\mcinco\M', '5', 'g');
+  d := regexp_replace(d, '\m(seis|meia)\M', '6', 'g'); d := regexp_replace(d, '\msete\M', '7', 'g');
+  d := regexp_replace(d, '\moito\M', '8', 'g');  d := regexp_replace(d, '\mnove\M', '9', 'g');
+  -- telefone: 9 ou mais dígitos seguidos (aceitando espaços, pontos, traços e parênteses) ou 0000-0000
+  d := regexp_replace(d, '\m\d{1,2}/\d{1,2}(/\d{2,4})?\M', ' data ', 'g');               -- datas não contam
+  d := regexp_replace(d, '\m\d{1,2}[.-]\d{1,2}[.-](19|20)\d{2}\M', ' data ', 'g');
+  if d ~ '(\d[\s.()_*/-]*){9,}' then return true; end if;
+  if d ~ '\m\d{4}[\s.-]?\d{4}\M' and not d ~ '\m(19|20)\d{2}[\s.-]+(19|20)\d{2}\M' then return true; end if;
+  return false;
+end $$;
+
+-- registro das tentativas (só a equipe lê)
+create table if not exists public.contact_attempts (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references public.profiles(id) on delete cascade,
+  quote_id   uuid references public.quotes(id) on delete set null,
+  field      text not null check (char_length(field) <= 40),
+  body       text not null check (char_length(body) <= 4000),
+  created_at timestamptz not null default now()
+);
+create index if not exists contact_attempts_idx on public.contact_attempts (created_at desc);
+alter table public.contact_attempts enable row level security;
+revoke all on public.contact_attempts from anon, authenticated;
+grant select, delete on public.contact_attempts to authenticated;
+drop policy if exists ca_admin on public.contact_attempts;
+create policy ca_admin on public.contact_attempts for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- o app chama esta função quando um texto é recusado; ela confere de novo antes de registrar
+create or replace function public.log_contact_attempt(p_field text, p_body text, p_quote uuid default null)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if auth.uid() is null or not (private.has_contact(p_body) or private.has_contact(p_body, false)) then return; end if;
+  if (select count(*) from public.contact_attempts where user_id = auth.uid() and created_at > now() - interval '1 hour') >= 30 then return; end if;
+  if p_quote is not null and not exists (select 1 from public.quotes q where q.id = p_quote
+      and (q.company_id = auth.uid() or q.speaker_id = auth.uid())) then p_quote := null; end if;
+  insert into public.contact_attempts (user_id, quote_id, field, body)
+  values (auth.uid(), p_quote, left(coalesce(p_field, 'texto'), 40), left(p_body, 4000));
+end $$;
+revoke execute on function public.log_contact_attempt(text, text, uuid) from public, anon;
+grant execute on function public.log_contact_attempt(text, text, uuid) to authenticated;
+
+create or replace function private.no_contact(t text, strict boolean default true) returns void
+language plpgsql set search_path = '' as $$
+begin
+  if private.has_contact(t, strict) then
+    raise exception 'Por segurança, telefone, e-mail, redes sociais e links só podem ser trocados depois do pagamento pela plataforma.'
+      using errcode = 'P0001';
+  end if;
+end $$;
+
+create or replace function private.guard_contact_msg() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if not exists (select 1 from public.quotes q where q.id = new.quote_id and q.status in ('paid', 'done')) then
+    perform private.no_contact(new.body);
+  end if;
+  return new;
+end $$;
+drop trigger if exists guard_contact_msg on public.quote_messages;
+create trigger guard_contact_msg before insert on public.quote_messages
+  for each row execute function private.guard_contact_msg();
+
+create or replace function private.guard_contact_quote() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.status in ('paid', 'done') then return new; end if;
+  if tg_op = 'INSERT' or new.title is distinct from old.title then perform private.no_contact(new.title); end if;
+  if tg_op = 'INSERT' or new.message is distinct from old.message then perform private.no_contact(new.message); end if;
+  if tg_op = 'INSERT' or new.speaker_note is distinct from old.speaker_note then perform private.no_contact(new.speaker_note); end if;
+  return new;
+end $$;
+drop trigger if exists guard_contact_quote on public.quotes;
+create trigger guard_contact_quote before insert or update on public.quotes
+  for each row execute function private.guard_contact_quote();
+
+-- perfil público: sem contato no nome, frase, biografia e palestras; redes sociais não são mais publicadas
+create or replace function private.guard_contact_speaker() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  new.instagram := null;
+  new.linkedin := null;
+  if new.video_url is not null and (tg_op = 'INSERT' or new.video_url is distinct from old.video_url) and new.video_url !~ '^https://(www\.|m\.)?(youtube\.com/(watch\?v=|shorts/|embed/)|youtu\.be/|vimeo\.com/|player\.vimeo\.com/video/)[A-Za-z0-9_-]' then
+    raise exception 'Use um link do YouTube ou do Vimeo para o vídeo.' using errcode = 'P0001';
+  end if;
+  if new.photo_url is not null and (tg_op = 'INSERT' or new.photo_url is distinct from old.photo_url) and new.photo_url !~ '^https://[a-z0-9-]+\.supabase\.co/storage/v1/object/public/fotos/' then
+    raise exception 'Envie a foto pelo próprio app.' using errcode = 'P0001';
+  end if;
+  if tg_op = 'INSERT' or new.public_name is distinct from old.public_name then perform private.no_contact(new.public_name, false); end if;
+  if tg_op = 'INSERT' or new.headline is distinct from old.headline then perform private.no_contact(new.headline, false); end if;
+  if tg_op = 'INSERT' or new.bio is distinct from old.bio then perform private.no_contact(new.bio, false); end if;
+  if tg_op = 'INSERT' or new.topics is distinct from old.topics then perform private.no_contact(new.topics, false); end if;
+  return new;
+end $$;
+drop trigger if exists guard_contact_speaker on public.speakers;
+create trigger guard_contact_speaker before insert or update on public.speakers
+  for each row execute function private.guard_contact_speaker();
+
+create or replace function private.guard_contact_company() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if tg_op = 'INSERT' or new.company_name is distinct from old.company_name then perform private.no_contact(new.company_name, false); end if;
+  return new;
+end $$;
+drop trigger if exists guard_contact_company on public.companies;
+create trigger guard_contact_company before insert or update on public.companies
+  for each row execute function private.guard_contact_company();
+
+-- apaga redes sociais que já estavam publicadas
+update public.speakers set instagram = null, linkedin = null where instagram is not null or linkedin is not null;
+
+revoke execute on function private.has_contact(text, boolean) from public, anon, authenticated;
+revoke execute on function private.no_contact(text, boolean) from public, anon, authenticated;
+revoke execute on function private.guard_contact_msg() from public, anon, authenticated;
+revoke execute on function private.guard_contact_quote() from public, anon, authenticated;
+revoke execute on function private.guard_contact_speaker() from public, anon, authenticated;
+revoke execute on function private.guard_contact_company() from public, anon, authenticated;
 
 -- Ninguém chama estas funções diretamente; só os gatilhos.
 revoke execute on function private.notify(text, uuid) from public, anon, authenticated;

@@ -4,7 +4,7 @@
   var C = window.SC || {};
   var ready = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(C.supabaseUrl || "") && C.supabaseKey && !/COLE_AQUI/.test(C.supabaseKey);
   var sb = ready && window.supabase ? window.supabase.createClient(C.supabaseUrl, C.supabaseKey, { auth: { persistSession: false } }) : null;
-  var COLS = "id,public_name,headline,bio,topics,categories,city,uf,formats,fee_from_cents,photo_url,video_url,instagram,linkedin,verified_until";
+  var COLS = "id,public_name,headline,bio,topics,categories,city,uf,formats,fee_from_cents,photo_url,video_url,verified_until";
 
   function e(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function brl(c) { return "R$ " + (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
@@ -302,8 +302,7 @@
       var d = document.querySelector('meta[name="description"]'); if (d) d.setAttribute("content", (s.headline || "Palestrante") + " — peça um orçamento pelo SpeakerConnect.");
       var photo = safeUrl(s.photo_url), vid = videoEmbed(s.video_url);
       var ask = "/app/#/novo-pedido?p=" + encodeURIComponent(s.id);
-      var links = [safeUrl(s.linkedin) ? '<a href="' + e(s.linkedin) + '" target="_blank" rel="noopener">LinkedIn</a>' : "",
-        s.instagram ? '<a href="https://instagram.com/' + e(String(s.instagram).replace(/^@/, "")) + '" target="_blank" rel="noopener">Instagram</a>' : ""].filter(Boolean).join("&nbsp;&nbsp;");
+      var links = "";
       var from = s.fee_from_cents ? '<span class="from">Palestras a partir de<b>' + brl(s.fee_from_cents) + "</b></span>" : '<span class="from">Valor<b>sob consulta</b></span>';
       var talks = String(s.topics || "").split(/\n+/).map(function (t) { return t.replace(/^[\s•\-–*·\d.)]+/, "").trim(); }).filter(Boolean);
       root.innerHTML =

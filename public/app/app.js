@@ -39,9 +39,17 @@
     if (/rate limit|too many/i.test(m)) return "Muitas tentativas. Espere um pouco e tente de novo.";
     if (/failed to fetch|network|load failed/i.test(m)) return "Sem conexão. Confira a internet e tente de novo.";
     if (/row-level security|permission denied|42501/i.test(m)) return "Sem permissão para essa ação.";
+    if (/^Por segurança|Use um link do YouTube|Envie a foto pelo próprio app/.test(m)) return m;
     if (/Envie a foto do seu documento|Complete o perfil|Categoria inválida|não está disponível|Mudança|Só a|Depois da proposta|Informe o valor|Você não pode/.test(m)) return m;
     try { console.error("Erro do app:", err); } catch (x) {}
     return "Não foi possível concluir agora. Tente de novo em instantes.";
+  }
+
+  // texto recusado por conter contato: registra a tentativa para a equipe (o banco confere de novo)
+  function logBlocked(err, field, body, qid) {
+    var m = String((err && err.message) || "");
+    if (!/^Por segurança/.test(m) || !body) return;
+    try { sb.rpc("log_contact_attempt", { p_field: field, p_body: String(body).slice(0, 4000), p_quote: qid || null }).then(function () {}, function () {}); } catch (x) {}
   }
 
   // ---------- Face ID / digital (passkeys do Supabase) ----------
@@ -522,7 +530,7 @@
           audience: aud > 0 ? aud : null, duration_min: parseInt(val("du"), 10) || null, message: val("ms") || null
         }).select("id").single().then(function (r) {
           busy(btn, false);
-          if (r.error) return fail(friendly(r.error));
+          if (r.error) { logBlocked(r.error, "pedido", [title, val("ms")].join("\n")); return fail(friendly(r.error)); }
           toast("Pedido enviado. Avisamos o palestrante.");
           go("#/pedido?id=" + r.data.id);
         });
@@ -602,7 +610,7 @@
         return '<div class="bubble' + (mine ? " me" : "") + '">' + e(m.body) + "<small>" + (mine ? "Você" : e(other)) + ", " + e(when(m.created_at)) + "</small></div>";
       }).join("") : '<p class="muted small center">Nenhuma mensagem ainda. Use este espaço para combinar os detalhes.</p>') + "</div>";
       if (canWrite) html += '<form class="composer" id="cf"><label class="hp" for="mb">Mensagem</label><textarea id="mb" maxlength="2000" placeholder="Escreva uma mensagem"></textarea><button aria-label="Enviar mensagem">' + icon("send", 20) + "</button></form>" +
-        (["paid", "done"].indexOf(Q.status) < 0 ? '<p class="hint">Para sua segurança, combine o pagamento só pela plataforma. Os contatos são liberados depois do pagamento.</p>' : "");
+        (["paid", "done"].indexOf(Q.status) < 0 ? '<p class="hint">Telefone, e-mail, redes sociais e links só podem ser trocados depois do pagamento. Combine tudo pela plataforma: é o que garante o seu dinheiro e o evento.</p>' : "");
       if (!sp && ["requested", "proposed", "accepted"].indexOf(Q.status) > -1) html += '<button class="full linkbtn" id="cancel" type="button">Cancelar pedido</button>';
 
       shell(html, "pedidos", head);
@@ -610,7 +618,7 @@
     }
     function update(patch, okMsg) {
       return sb.from("quotes").update(patch).eq("id", id).select("id").then(function (r) {
-        if (r.error) { toast(friendly(r.error)); return; }
+        if (r.error) { logBlocked(r.error, "proposta", [patch.speaker_note, patch.message, patch.title].filter(Boolean).join("\n"), id); toast(friendly(r.error)); return; }
         if (okMsg) toast(okMsg);
         load().then(render);
       });
@@ -656,7 +664,7 @@
           var b = this.querySelector("button"); b.disabled = true;
           sb.from("quote_messages").insert({ quote_id: Q.id, body: body }).then(function (r) {
             b.disabled = false;
-            if (r.error) { toast(friendly(r.error)); return; }
+            if (r.error) { logBlocked(r.error, "chat", body, Q.id); toast(friendly(r.error)); return; }
             load().then(render);
           });
         };
@@ -764,8 +772,7 @@
         '<div class="row"><div style="flex:2"><label for="ci">Cidade onde você mora</label><input id="ci" maxlength="60" value="' + e(s.city || "") + '"></div><div><label for="uf">UF</label>' + ufSelect("uf", s.uf) + "</div></div>" +
         '<label for="fe">Valor de referência <span class="opt">(a partir de)</span></label><input id="fe" inputmode="decimal" placeholder="Ex.: 3.500,00" value="' + (s.fee_from_cents ? (s.fee_from_cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "") + '"><p class="hint">Aparece no seu perfil. O valor de cada evento você define na proposta.</p></div>' +
         '<div class="card"><label for="vd" style="margin-top:0">Vídeo <span class="opt">(link do YouTube ou Vimeo)</span></label><input id="vd" type="url" inputmode="url" maxlength="300" value="' + e(s.video_url || "") + '" placeholder="https://youtube.com/…">' +
-        '<label for="ln">LinkedIn <span class="opt">(opcional)</span></label><input id="ln" type="url" inputmode="url" maxlength="300" value="' + e(s.linkedin || "") + '" placeholder="https://linkedin.com/in/…">' +
-        '<label for="ig">Instagram <span class="opt">(opcional)</span></label><input id="ig" maxlength="60" value="' + e(s.instagram || "") + '" placeholder="@seuperfil"></div>' +
+        '<p class="hint">Para sua segurança e a da empresa, o perfil não mostra telefone, e-mail, redes sociais nem links. Os contatos são liberados depois do pagamento.</p></div>' +
         docCard() +
         '<div id="msg" role="alert"></div><button class="full" id="save">Salvar</button>' +
         (s.status === "draft" || s.status === "rejected" ? '<button class="full spot" type="button" id="submit">Salvar e enviar para análise</button>' : "") +
@@ -807,7 +814,7 @@
         return {
           error: val("pn").length < 2 ? "Informe o nome público." : !formats.length ? "Escolha pelo menos um formato." : (val("fe") && !(fee > 0)) ? "Confira o valor de referência. Ex.: 3.500,00" : null,
           data: { public_name: val("pn"), headline: val("hl") || null, bio: val("bi") || null, topics: val("tp") || null, categories: catsOn, formats: formats,
-                  city: val("ci") || null, uf: val("uf") || null, fee_from_cents: fee || null, video_url: https(val("vd")), linkedin: https(val("ln")), instagram: val("ig") || null }
+                  city: val("ci") || null, uf: val("uf") || null, fee_from_cents: fee || null, video_url: https(val("vd")) }
         };
       }
       function save(sendReview) {
@@ -820,7 +827,7 @@
         busy(btn, true, "Salvando…");
         sb.from("speakers").update(c.data).eq("id", user.id).select("*").single().then(function (r) {
           busy(btn, false);
-          if (r.error) { $("msg").innerHTML = '<div class="err">' + e(friendly(r.error)) + "</div>"; return; }
+          if (r.error) { logBlocked(r.error, "perfil", [c.data.public_name, c.data.headline, c.data.bio, c.data.topics].filter(Boolean).join("\n")); $("msg").innerHTML = '<div class="err">' + e(friendly(r.error)) + "</div>"; return; }
           me = r.data;
           toast(sendReview ? "Perfil enviado para análise." : "Perfil salvo.");
           if (sendReview) go("#/"); else screenProfile();
@@ -930,7 +937,7 @@
       Promise.all(jobs).then(function (rs) {
         busy(btn, false);
         var err = rs.filter(function (r) { return r.error; })[0];
-        if (err) return fail(friendly(err.error));
+        if (err) { logBlocked(err.error, "empresa", val("cn")); return fail(friendly(err.error)); }
         loadMe().then(function () { toast("Dados salvos."); });
       });
     };
