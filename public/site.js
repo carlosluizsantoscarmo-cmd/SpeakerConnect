@@ -52,7 +52,7 @@
         '<div><nav aria-label="Rodapé"><a href="/termos.html">Termos de uso</a><a href="/privacidade.html">Privacidade</a><a href="/app/">Entrar</a></nav>' +
         (C.email ? '<p class="small" style="margin-top:12px">Contato: <a href="mailto:' + e(C.email) + '">' + e(C.email) + "</a></p>" : "") +
         socialLinks() +
-        '<p class="small">© ' + new Date().getFullYear() + " SpeakerConnect</p></div></div>";
+        '<p class="small">© ' + new Date().getFullYear() + " SpeakerConnect · CNPJ 46.090.377/0001-80 · Serra/ES</p></div></div>";
     }
     if (C.whatsapp && /^\d{12,13}$/.test(C.whatsapp)) {
       var a = document.createElement("a");
