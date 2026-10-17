@@ -10,7 +10,7 @@ window.SC = {
   email: "contato@speakerconnect.com.br",
   // Redes sociais mostradas no rodapé (endereço completo). Vazio = o ícone não aparece.
   instagram: "https://www.instagram.com/speakerconnect.com.br/",
-  linkedin: "",
+  linkedin: "https://www.linkedin.com/company/145289979/",
   // Mostrados nas páginas (o valor cobrado de verdade é definido no Cloudflare).
   commissionPct: 20,
   verifiedPrice: "R$ 199,00 por ano"
