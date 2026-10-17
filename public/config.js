@@ -8,6 +8,9 @@ window.SC = {
   whatsapp: "5527996133207",
   // E-mail de contato mostrado no site.
   email: "contato@speakerconnect.com.br",
+  // Redes sociais mostradas no rodapé (endereço completo). Vazio = o ícone não aparece.
+  instagram: "https://www.instagram.com/speakerconnect.com.br/",
+  linkedin: "",
   // Mostrados nas páginas (o valor cobrado de verdade é definido no Cloudflare).
   commissionPct: 20,
   verifiedPrice: "R$ 199,00 por ano"

@@ -51,6 +51,7 @@
         '<p class="small" style="margin-top:10px;max-width:38ch">Palestrantes para eventos corporativos, SIPAT, convenções e treinamentos, com orçamento e pagamento pela plataforma.</p></div>' +
         '<div><nav aria-label="Rodapé"><a href="/termos.html">Termos de uso</a><a href="/privacidade.html">Privacidade</a><a href="/app/">Entrar</a></nav>' +
         (C.email ? '<p class="small" style="margin-top:12px">Contato: <a href="mailto:' + e(C.email) + '">' + e(C.email) + "</a></p>" : "") +
+        socialLinks() +
         '<p class="small">© ' + new Date().getFullYear() + " SpeakerConnect</p></div></div>";
     }
     if (C.whatsapp && /^\d{12,13}$/.test(C.whatsapp)) {
@@ -60,6 +61,19 @@
       a.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.5 0-3-.4-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.6.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6.5-.1 1.5-.6 1.7-1.2s.2-1.1.2-1.2-.2-.2-.4-.3z"/></svg>';
       document.body.appendChild(a);
     }
+  }
+
+  // ---------- redes sociais (rodapé) ----------
+  function socialLinks() {
+    var nets = [
+      { url: C.instagram, label: "Instagram do SpeakerConnect", ic: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>' },
+      { url: C.linkedin, label: "LinkedIn do SpeakerConnect", ic: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 10v7M8 7v.01M12 17v-4a2 2 0 0 1 4 0v4M12 10v7"/>' }
+    ];
+    var html = nets.filter(function (n) { return n.url && /^https:\/\//.test(n.url); }).map(function (n) {
+      return '<a href="' + e(n.url) + '" target="_blank" rel="noopener" aria-label="' + e(n.label) + '" title="' + e(n.label) + '">' +
+        '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + n.ic + "</svg></a>";
+    }).join("");
+    return html ? '<div class="social">' + html + "</div>" : "";
   }
 
   // ---------- ícones dos temas ----------

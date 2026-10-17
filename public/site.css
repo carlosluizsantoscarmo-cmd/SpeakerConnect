@@ -159,6 +159,9 @@ footer{background:var(--stage);color:#C9C8EC;padding:48px 0 36px;font-size:15px}
 footer .wrap{display:flex;flex-wrap:wrap;gap:24px 48px;justify-content:space-between}
 footer a{color:#fff}
 footer nav{display:flex;gap:18px;flex-wrap:wrap}
+footer .social{display:flex;gap:12px;margin:14px 0 12px}
+footer .social a{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,.08);color:#fff;transition:background .15s}
+footer .social a:hover,footer .social a:focus-visible{background:rgba(255,255,255,.18)}
 
 /* página do palestrante */
 /* página do palestrante */
