@@ -206,7 +206,7 @@
     var photo = safeUrl(s.photo_url);
     var cats = (s.categories || []).slice(0, 2).map(function (c) { return '<span class="tag">' + e(c) + "</span>"; }).join("");
     var place = [s.city, s.uf].filter(Boolean).join("/");
-    return '<a class="sp" href="/palestrante.html?id=' + e(s.id) + '" aria-label="' + e(s.public_name) + (verified(s) ? ", palestrante verificado" : "") + '">' +
+    return '<a class="sp" href="/palestrante?id=' + e(s.id) + '" aria-label="' + e(s.public_name) + (verified(s) ? ", palestrante verificado" : "") + '">' +
       '<div class="ph">' + (photo ? '<img src="' + e(photo) + '" alt="" loading="lazy">' : '<div class="mono" aria-hidden="true">' + e(initials(s.public_name)) + "</div>") +
       (verified(s) ? '<span class="badge vchip">' + CHECK.replace('class="verified-ic"', 'style="color:var(--stage)"') + "<span>Verificado</span></span>" : "") + "</div>" +
       '<div class="bd"><h3>' + e(s.public_name) + "</h3>" +

@@ -293,7 +293,7 @@
   function speakerStatusCard() {
     var s = me || {};
     if (s.status === "approved") {
-      return '<div class="card dark"><h3>Seu perfil está publicado</h3><p class="muted small" style="margin:4px 0 12px">As empresas já encontram você no site.</p><a class="btn spot slim" href="/palestrante.html?id=' + e(s.id) + '">Ver minha página</a></div>' + seloCard();
+      return '<div class="card dark"><h3>Seu perfil está publicado</h3><p class="muted small" style="margin:4px 0 12px">As empresas já encontram você no site.</p><a class="btn spot slim" href="/palestrante?id=' + e(s.id) + '">Ver minha página</a></div>' + seloCard();
     }
     if (s.status === "pending") return '<div class="card"><span class="pill warn">Em análise</span><h3 style="margin-top:10px">Recebemos seu perfil</h3><p class="muted small" style="margin:0">Nossa equipe revisa em até 2 dias úteis e avisa você por e-mail.</p></div>';
     if (s.status === "suspended") return '<div class="card"><span class="pill err">Suspenso</span><p class="muted small" style="margin:10px 0 0">Seu perfil está fora do ar. Fale com a equipe para entender o motivo.</p></div>';
@@ -317,6 +317,7 @@
   function mpCard() {
     if (mpConn) return '<div class="card"><span class="pill ok">Recebimento ativo</span><p class="muted small" style="margin:8px 0 0">Os pagamentos das empresas caem direto na sua conta do Mercado Pago, já descontada a comissão da plataforma.</p></div>';
     return '<div class="card"><h3>Receba pelo Mercado Pago</h3><p class="muted small" style="margin:4px 0 0">Conecte sua conta para as empresas conseguirem pagar. O valor cai direto para você, já descontada a comissão de ' + (Number(C.commissionPct) || 0) + '%. Se não tiver conta, dá para criar na hora, de graça.</p>' +
+      '<p class="muted small" style="margin:8px 0 0"><b>Seu banco é outro (Banco do Brasil, Caixa, Itaú…)?</b> Sem problema: crie a conta grátis no Mercado Pago só para receber e, quando quiser, transfira por Pix para o seu banco, sem custo.</p>' +
       '<button class="full" id="mpc" type="button">Conectar minha conta do Mercado Pago</button><div id="mpcmsg" role="alert"></div></div>';
   }
   function bindMp() {
@@ -490,7 +491,7 @@
   function screenNewQuote(q) {
     stopTimer();
     var pid = q.get("p") || "";
-    var head = topbar("Pedir orçamento", "/palestrante.html?id=" + encodeURIComponent(pid));
+    var head = topbar("Pedir orçamento", "/palestrante?id=" + encodeURIComponent(pid));
     if (profile.role !== "company") {
       shell('<div class="card"><h3>Pedidos são feitos por empresas</h3><p class="muted small" style="margin:6px 0 0">Você entrou como palestrante. Para pedir um orçamento, crie uma conta de empresa com outro e-mail.</p></div>', "pedidos", head);
       return;
@@ -758,7 +759,7 @@
     loadCats().then(function () {
       var s = me || {};
       var status = { draft: ["Rascunho", "warn"], pending: ["Em análise", "warn"], approved: ["Publicado", "ok"], rejected: ["Precisa de ajustes", "err"], suspended: ["Suspenso", "err"] }[s.status] || ["", ""];
-      var html = '<p style="margin:0 0 12px"><span class="pill ' + status[1] + '">' + status[0] + "</span>" + (s.status === "approved" ? ' <a class="small" href="/palestrante.html?id=' + e(s.id) + '">Ver página</a>' : "") + "</p>" +
+      var html = '<p style="margin:0 0 12px"><span class="pill ' + status[1] + '">' + status[0] + "</span>" + (s.status === "approved" ? ' <a class="small" href="/palestrante?id=' + e(s.id) + '">Ver página</a>' : "") + "</p>" +
         (s.status === "rejected" && s.review_note ? '<div class="err" style="margin:0 0 12px"><b>O que ajustar:</b> ' + e(s.review_note) + "</div>" : "") +
         '<form id="f" class="pform" novalidate><div class="card"><div class="photo">' + avatar(s.public_name, s.photo_url).replace('class="av"', 'class="av" id="pv"') +
         '<div><label for="pic" class="btn slim ghost" style="margin:0;cursor:pointer">Trocar foto</label><input id="pic" type="file" accept="image/jpeg,image/png,image/webp" hidden><p class="hint">Rosto bem visível, fundo neutro.</p></div></div>' +

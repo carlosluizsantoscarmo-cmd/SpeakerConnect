@@ -657,6 +657,81 @@ async function contaDelete({ request, env }) {
   return json(200, { ok: true });
 }
 
+// ---------- páginas públicas: prévia do perfil (WhatsApp/LinkedIn/Google) e sitemap ----------
+const SPEAKER_SEO_COLS = "id,public_name,headline,bio,city,uf,categories,photo_url,updated_at";
+const escHtml = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const siteBase = (env) => String(env.SITE_URL || "https://speakerconnect.com.br").replace(/\/$/, "");
+
+// Lê só dados públicos, com a chave pública: as regras do banco valem (apenas perfis aprovados).
+async function publicSpeakers(env, query) {
+  const r = await fetch(env.SUPABASE_URL.replace(/\/$/, "") + "/rest/v1/speakers?" + query, {
+    headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: "Bearer " + env.SUPABASE_ANON_KEY },
+  });
+  if (!r.ok) throw new Error("speakers " + r.status);
+  return r.json();
+}
+
+function clip(t, n) {
+  t = String(t || "").replace(/\s+/g, " ").trim();
+  return t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : t;
+}
+
+export function speakerMeta(html, s, pageUrl, env) {
+  const place = s.city ? s.city + (s.uf ? "/" + s.uf : "") : "";
+  const title = s.public_name + " | Palestrante | SpeakerConnect";
+  const desc = clip([s.headline, place].filter(Boolean).join(" · ") + ". Peça um orçamento sem custo no SpeakerConnect.", 200);
+  const img = /^https:\/\/[^/]+\.supabase\.co\/storage\/v1\/object\/public\//.test(s.photo_url || "") ? s.photo_url : siteBase(env) + "/og.png";
+  const ld = { "@context": "https://schema.org", "@type": "Person", name: s.public_name, description: clip(s.headline || s.bio, 300), url: pageUrl, image: img, jobTitle: "Palestrante" };
+  if (s.city) ld.address = { "@type": "PostalAddress", addressLocality: s.city, addressRegion: s.uf || undefined, addressCountry: "BR" };
+  if (Array.isArray(s.categories) && s.categories.length) ld.knowsAbout = s.categories;
+  const tags = [
+    `<link rel="canonical" href="${escHtml(pageUrl)}">`,
+    `<meta property="og:type" content="profile">`,
+    `<meta property="og:site_name" content="SpeakerConnect">`,
+    `<meta property="og:title" content="${escHtml(s.public_name + " | Palestrante")}">`,
+    `<meta property="og:description" content="${escHtml(desc)}">`,
+    `<meta property="og:url" content="${escHtml(pageUrl)}">`,
+    `<meta property="og:image" content="${escHtml(img)}">`,
+    `<meta property="og:locale" content="pt_BR">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script>`,
+  ].join("\n");
+  return html
+    .replace(/<title>[\s\S]*?<\/title>/, `<title>${escHtml(title)}</title>`)
+    .replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${escHtml(desc)}">`)
+    .replace("</head>", tags + "\n</head>");
+}
+
+async function profilePage(request, env) {
+  const url = new URL(request.url);
+  // Endereço antigo (.html): manda para o endereço limpo, mantendo o ?id=.
+  if (url.pathname.endsWith(".html")) return new Response(null, { status: 301, headers: { Location: "/palestrante" + url.search } });
+  const res = await env.ASSETS.fetch(request);
+  const id = url.searchParams.get("id") || "";
+  if (!res.ok || !/text\/html/.test(res.headers.get("content-type") || "") || !UUID.test(id) || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return res;
+  let s = null;
+  try { s = (await publicSpeakers(env, `select=${SPEAKER_SEO_COLS}&id=eq.${id}&status=eq.approved&limit=1`))[0] || null; }
+  catch (e) { console.error("perfil: prévia falhou:", e && e.message); }
+  if (!s || !s.public_name) return res;
+  const html = speakerMeta(await res.text(), s, siteBase(env) + url.pathname + "?id=" + id, env);
+  const headers = new Headers(res.headers);
+  headers.delete("content-length"); headers.delete("etag");
+  headers.set("Cache-Control", "public, max-age=300");
+  return new Response(html, { status: 200, headers });
+}
+
+const STATIC_PAGES = ["/", "/termos", "/privacidade", "/termo-palestrante"];
+async function sitemap(request, env) {
+  const base = siteBase(env);
+  let rows = [];
+  try { if (env.SUPABASE_URL && env.SUPABASE_ANON_KEY) rows = await publicSpeakers(env, "select=id,updated_at&status=eq.approved&order=updated_at.desc&limit=5000"); }
+  catch (e) { console.error("sitemap: falhou:", e && e.message); return env.ASSETS.fetch(request); }
+  const urls = STATIC_PAGES.map((p) => `  <url><loc>${base}${p}</loc></url>`)
+    .concat(rows.filter((r) => UUID.test(r.id || "")).map((r) => `  <url><loc>${base}/palestrante?id=${r.id}</loc>${r.updated_at ? `<lastmod>${String(r.updated_at).slice(0, 10)}</lastmod>` : ""}</url>`));
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
+  return new Response(xml, { headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" } });
+}
+
 // ---------- roteador ----------
 const routes = {
   "/api/mp/config": { GET: mpConfigGet },
@@ -681,6 +756,10 @@ export default {
       try { return await h({ request, env, ctx }); }
       catch (e) { console.error(pathname, "falhou:", e && e.message); return json(500, { error: "Erro inesperado. Tente de novo em instantes." }); }
     }
+    if (pathname === "/palestrante" || pathname === "/palestrante.html") {
+      try { return await profilePage(request, env); } catch (e) { console.error("perfil falhou:", e && e.message); return env.ASSETS.fetch(request); }
+    }
+    if (pathname === "/sitemap.xml") return sitemap(request, env);
     return env.ASSETS.fetch(request);
   },
 };
