@@ -78,6 +78,13 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
   .acts{flex-wrap:wrap;margin-top:6px}
   .acts button,.acts .btn{min-height:40px}
 }
+.pcard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:16px}
+.logos{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.lgi{border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.lgimg{height:90px;display:grid;place-items:center;background:#fff;border:1px dashed var(--line);border-radius:10px;padding:8px}
+.lgimg img{max-width:100%;max-height:74px;object-fit:contain}
+.lgi .acts{display:flex;gap:8px}
+.lgi .acts button{flex:1;padding:8px}
 </style>
 </head>
 <body>
@@ -87,7 +94,7 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     <button data-t="palestrantes" class="on">Palestrantes<span class="n" id="n-pend" hidden></span></button>
     <button data-t="pedidos">Pedidos</button>
     <button data-t="pagamentos">Pagamentos<span class="n" id="n-rep" hidden></span></button>
-    <button data-t="empresas">Empresas</button>
+    <button data-t="empresas">Empresas<span class="n" id="n-lg" hidden></span></button>
     <button data-t="temas">Temas</button>
     <button data-t="alertas">Alertas<span class="n" id="n-al" hidden></span></button>
   </nav>
@@ -191,6 +198,8 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
       $("n-rep").hidden = !rep; $("n-rep").textContent = rep;
       var al = data.attempts.filter(function (a) { return Date.now() - new Date(a.created_at) < 7 * 864e5; }).length;
       $("n-al").hidden = !al; $("n-al").textContent = al;
+      var lg = data.companies.filter(function (c) { return c.logo_status === "pending"; }).length;
+      $("n-lg").hidden = !lg; $("n-lg").textContent = lg;
     });
   }
   function refresh() { return loadAll().then(render).catch(function (err) { main.innerHTML = '<div class="err">Erro ao carregar: ' + e(err.message) + "</div>"; }); }
@@ -337,16 +346,32 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
   }
 
   // ---------- empresas ----------
+  var LOGO_ST = { pending: ["Em análise", "warn"], approved: ["No site", "ok"], rejected: ["Recusada", "err"] };
   function screenCompanies() {
     var c = data.companies;
     var html = '<div class="bar"><h1 class="grow">Empresas</h1><span style="color:var(--mut)">' + c.length + " cadastradas</span></div>";
+    var pend = c.filter(function (x) { return x.logo_status === "pending"; });
+    var pub = c.filter(function (x) { return x.logo_status === "approved" && x.logo_consent; }).length;
+    html += '<div class="pcard"><h2 style="margin:0 0 4px;font-size:18px">Empresas Parceiras</h2><p style="color:var(--mut);margin:0 0 12px;font-size:14px">' + pub + " logo" + (pub === 1 ? "" : "s") + " no site. A seção aparece na página inicial a partir de 4 logos aprovadas.</p>" +
+      (pend.length ? '<div class="logos">' + pend.map(function (x) {
+        return '<div class="lgi"><div class="lgimg"><img src="' + e(x.logo_url) + '" alt=""></div><b>' + e(x.company_name) + '</b><div class="acts"><button class="ok" data-lg="approved" data-id="' + x.id + '">Aprovar</button><button class="ghost" data-lg="rejected" data-id="' + x.id + '">Recusar</button></div></div>';
+      }).join("") + "</div>" : '<p style="margin:0;font-size:14px">Nenhuma logo esperando aprovação.</p>') + "</div>";
     if (!c.length) html += '<div class="empty">Nenhuma empresa cadastrada ainda.</div>';
-    else html += '<div class="scroll"><table><thead><tr><th>Empresa</th><th>Contato</th><th class="hide">Local</th><th>Pedidos</th><th class="hide">Cadastro</th></tr></thead><tbody>' + c.map(function (x) {
+    else html += '<div class="scroll"><table><thead><tr><th>Empresa</th><th>Contato</th><th class="hide">Local</th><th>Logo</th><th>Pedidos</th><th class="hide">Cadastro</th></tr></thead><tbody>' + c.map(function (x) {
       var p = data.prof[x.id] || {}, n = data.quotes.filter(function (q) { return q.company_id === x.id; }).length;
       return "<tr><td><b>" + e(x.company_name) + "</b>" + (x.cnpj ? '<div class="sub">CNPJ ' + e(x.cnpj) + "</div>" : "") + "</td><td>" + e(p.name || "") + '<div class="sub">' + e(p.email || "") + (p.phone ? " · " + e(p.phone) : "") + "</div></td>" +
-        '<td class="hide">' + e([x.city, x.uf].filter(Boolean).join("/") || "—") + "</td><td>" + n + '</td><td class="hide">' + d(x.created_at) + "</td></tr>";
+        '<td class="hide">' + e([x.city, x.uf].filter(Boolean).join("/") || "—") + "</td><td>" + (LOGO_ST[x.logo_status] && x.logo_url ? '<span class="pill ' + LOGO_ST[x.logo_status][1] + '">' + LOGO_ST[x.logo_status][0] + "</span>" + (x.logo_status === "approved" ? ' <button class="ghost" data-lg="rejected" data-id="' + x.id + '" style="padding:4px 10px;font-size:12px">Tirar do site</button>' : "") : "—") + "</td><td>" + n + '</td><td class="hide">' + d(x.created_at) + "</td></tr>";
     }).join("") + "</tbody></table></div>";
     main.innerHTML = html;
+    main.querySelectorAll("[data-lg]").forEach(function (b) {
+      b.onclick = function () {
+        var st = b.getAttribute("data-lg");
+        b.disabled = true;
+        sb.from("companies").update({ logo_status: st }).eq("id", b.getAttribute("data-id")).then(function (r) {
+          if (!fail(r)) { toast(st === "approved" ? "Logo aprovada." : "Logo recusada."); refresh(); } else b.disabled = false;
+        });
+      };
+    });
   }
 
   // ---------- temas ----------

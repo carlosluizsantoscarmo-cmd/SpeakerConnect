@@ -126,6 +126,7 @@
             var c = db.profiles.filter(function (p) { return p.id === q.company_id; })[0], s = db.profiles.filter(function (p) { return p.id === q.speaker_id; })[0];
             return { data: [{ company_contact: c.name, company_phone: c.phone, company_email: c.email, speaker_contact: s.name, speaker_phone: s.phone, speaker_email: s.email }], error: null };
           }
+          if (fn === "partner_logos") return { data: window.__partners || db.companies.filter(function (c) { return c.logo_consent && c.logo_status === "approved" && c.logo_url; }).map(function (c) { return { company_name: c.company_name, logo_url: c.logo_url }; }), error: null };
           if (fn === "mp_connected") return { data: (window.__mpConnected || ["a0000000-0000-4000-8000-000000000001"]).indexOf(args.sid) > -1, error: null };
           return { data: null, error: { message: "rpc desconhecida" } };
         });

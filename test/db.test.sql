@@ -235,6 +235,48 @@ set role authenticated; select set_config('request.jwt.claim.sub', '00000000-000
 select tst.eq('equipe vê as tentativas', $$select count(*)::text from contact_attempts$$, '1');
 reset role;
 
+-- ---------- Empresas Parceiras (logo) ----------
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000003', false);
+select tst.no('empresa não usa logo de fora do app', $$update companies set logo_url='https://site.com/logo.png' where id=auth.uid()$$);
+select tst.no('empresa não usa logo de outra pasta', $$update companies set logo_url='https://abc.supabase.co/storage/v1/object/public/fotos/00000000-0000-0000-0000-000000000004/x.png' where id=auth.uid()$$);
+select tst.ok('empresa envia logo', $$update companies set logo_url='https://abc.supabase.co/storage/v1/object/public/fotos/00000000-0000-0000-0000-000000000003/logo-1.png' where id=auth.uid()$$);
+select tst.eq('sem autorização a logo não vai para análise', $$select logo_status from companies where id=auth.uid()$$, 'none');
+select tst.ok('empresa autoriza exibir', $$update companies set logo_consent=true where id=auth.uid()$$);
+select tst.eq('com autorização vai para análise', $$select logo_status from companies where id=auth.uid()$$, 'pending');
+select tst.ok('empresa tenta se aprovar', $$update companies set logo_status='approved' where id=auth.uid()$$);
+select tst.eq('mas continua em análise', $$select logo_status from companies where id=auth.uid()$$, 'pending');
+reset role;
+set role anon;
+select tst.eq('site não mostra logo em análise', $$select count(*)::text from partner_logos()$$, '0');
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+select tst.ok('equipe aprova a logo', $$update companies set logo_status='approved' where id='00000000-0000-0000-0000-000000000003'$$);
+select tst.eq('aprovação registra a data', $$select (logo_reviewed_at is not null)::text from companies where id='00000000-0000-0000-0000-000000000003'$$, 'true');
+reset role;
+set role anon;
+select tst.eq('site mostra logo aprovada', $$select company_name || '|' || logo_url from partner_logos()$$, 'Empresa Boa|https://abc.supabase.co/storage/v1/object/public/fotos/00000000-0000-0000-0000-000000000003/logo-1.png');
+select tst.no('visitante não lê a tabela de empresas', $$select * from companies$$);
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000001', false);
+select tst.eq('palestrante vê a lista pública', $$select count(*)::text from partner_logos()$$, '1');
+select tst.eq('palestrante continua sem ler a tabela de empresas', $$select count(*)::text from companies$$, '0');
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000003', false);
+select tst.ok('empresa troca a logo', $$update companies set logo_url='https://abc.supabase.co/storage/v1/object/public/fotos/00000000-0000-0000-0000-000000000003/logo-2.png' where id=auth.uid()$$);
+select tst.eq('logo nova volta para análise', $$select logo_status from companies where id=auth.uid()$$, 'pending');
+reset role;
+set role anon;
+select tst.eq('logo nova não aparece antes de aprovar', $$select count(*)::text from partner_logos()$$, '0');
+reset role;
+update companies set logo_status='approved' where id='00000000-0000-0000-0000-000000000003';
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000003', false);
+select tst.ok('empresa retira a autorização', $$update companies set logo_consent=false where id=auth.uid()$$);
+select tst.eq('sem autorização sai do site', $$select logo_status from companies where id=auth.uid()$$, 'none');
+reset role;
+set role anon;
+select tst.eq('site para de mostrar na hora', $$select count(*)::text from partner_logos()$$, '0');
+reset role;
+
 -- ---------- exclusão de conta mantém o registro financeiro ----------
 delete from auth.users where id = '00000000-0000-0000-0000-000000000003';
 select tst.eq('pagamento fica guardado após excluir conta', $$select count(*)::text from payments$$, '1');

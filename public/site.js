@@ -288,10 +288,26 @@
       if (pq) q.value = pq;
       apply();
     });
+    partners();
     sb.from("speakers").select(COLS).eq("status", "approved").order("updated_at", { ascending: false }).limit(500).then(function (r) {
       if (r.error) { grid.innerHTML = '<div class="empty"><h3>Não foi possível carregar os palestrantes</h3><p class="muted">Confira sua internet e atualize a página.</p></div>'; return; }
       all = (r.data || []).sort(function (a, b) { return verified(b) - verified(a); });
       apply();
+    });
+  }
+
+  // ---------- Empresas Parceiras (aparece a partir de 4 logos aprovadas) ----------
+  var PARTNERS_MIN = 4;
+  function partners() {
+    var box = $("#parceiras"), list = $("#plogos");
+    if (!box || !list || !sb) return;
+    sb.rpc("partner_logos").then(function (r) {
+      var l = (r.data || []).filter(function (x) { return /^https:\/\/[a-z0-9-]+\.supabase\.co\/storage\/v1\/object\/public\/fotos\//.test(x.logo_url || ""); });
+      if (r.error || l.length < PARTNERS_MIN) return;
+      list.innerHTML = l.map(function (x) {
+        return '<div class="plogo" title="' + e(x.company_name) + '"><img src="' + e(x.logo_url) + '" alt="' + e(x.company_name) + '" loading="lazy"></div>';
+      }).join("");
+      box.hidden = false;
     });
   }
 

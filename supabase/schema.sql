@@ -798,6 +798,80 @@ revoke execute on function private.notify(text, uuid) from public, anon, authent
 revoke execute on function private.handle_new_user() from public, anon, authenticated;
 revoke execute on function private.sync_user_email() from public, anon, authenticated;
 
+-- ---------- Empresas Parceiras (logo no site) ----------
+-- A empresa envia a logo e autoriza a exibição; a equipe aprova; só então aparece no site.
+alter table public.companies add column if not exists logo_url text;
+alter table public.companies add column if not exists logo_consent boolean not null default false;
+alter table public.companies add column if not exists logo_status text not null default 'none';
+alter table public.companies add column if not exists logo_reviewed_at timestamptz;
+alter table public.companies drop constraint if exists companies_logo_url_check;
+alter table public.companies add constraint companies_logo_url_check
+  check (logo_url is null or logo_url ~ '^https://[a-z0-9-]+\.supabase\.co/storage/v1/object/public/fotos/');
+alter table public.companies drop constraint if exists companies_logo_status_check;
+alter table public.companies add constraint companies_logo_status_check
+  check (logo_status in ('none', 'pending', 'approved', 'rejected'));
+
+grant update (logo_url, logo_consent, logo_status) on public.companies to authenticated;
+
+create or replace function private.guard_company_logo() returns trigger
+language plpgsql as $$
+begin
+  if private.is_backend() or public.is_admin() then
+    if tg_op = 'UPDATE' and new.logo_status is distinct from old.logo_status and new.logo_status in ('approved', 'rejected') then
+      new.logo_reviewed_at := now();
+    end if;
+    if new.logo_url is null or not new.logo_consent then new.logo_status := 'none'; end if;
+    return new;
+  end if;
+  -- a empresa só pode usar imagens da própria pasta
+  if new.logo_url is not null and (tg_op = 'INSERT' or new.logo_url is distinct from old.logo_url)
+     and position('/fotos/' || new.id::text || '/' in new.logo_url) = 0 then
+    raise exception 'Envie a logo pelo próprio app.' using errcode = '22023';
+  end if;
+  if tg_op = 'INSERT' then
+    new.logo_status := case when new.logo_url is not null and new.logo_consent then 'pending' else 'none' end;
+    new.logo_reviewed_at := null;
+    return new;
+  end if;
+  -- quem decide a aprovação é a equipe
+  new.logo_status := old.logo_status;
+  new.logo_reviewed_at := old.logo_reviewed_at;
+  if new.logo_url is null or not new.logo_consent then
+    new.logo_status := 'none';
+  elsif new.logo_url is distinct from old.logo_url or not old.logo_consent or old.logo_status = 'none' then
+    new.logo_status := 'pending';
+  end if;
+  return new;
+end $$;
+drop trigger if exists guard_company_logo on public.companies;
+create trigger guard_company_logo before insert or update on public.companies
+  for each row execute function private.guard_company_logo();
+
+create or replace function private.on_company_logo() returns trigger
+language plpgsql security definer set search_path = public, private as $$
+begin
+  if new.logo_status = 'pending' and old.logo_status is distinct from 'pending' then
+    perform private.notify('logo_para_analise', new.id);
+  end if;
+  return null;
+end $$;
+drop trigger if exists on_company_logo on public.companies;
+create trigger on_company_logo after update on public.companies
+  for each row execute function private.on_company_logo();
+
+-- O que o site mostra: só nome e logo das empresas que autorizaram e foram aprovadas.
+create or replace function public.partner_logos()
+returns table (company_name text, logo_url text)
+language sql stable security definer set search_path = public as $$
+  select c.company_name, c.logo_url from public.companies c
+  where c.logo_consent and c.logo_status = 'approved' and c.logo_url is not null
+  order by c.logo_reviewed_at nulls last, c.created_at
+  limit 60;
+$$;
+revoke execute on function public.partner_logos() from public;
+grant execute on function public.partner_logos() to anon, authenticated;
+revoke execute on function private.on_company_logo() from public, anon, authenticated;
+
 -- ---------- primeiro acesso da equipe ----------
 -- Depois de criar sua conta pelo app, rode (trocando o e-mail):
 --   update public.profiles set role = 'admin' where email = 'seu-email@exemplo.com';

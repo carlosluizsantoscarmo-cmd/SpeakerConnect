@@ -550,6 +550,13 @@ export async function buildNotice(env, request, type, id) {
             `\n\nFaça os ajustes no app e envie de novo para análise.` + foot }];
   }
 
+  if (type === "logo_para_analise") {
+    const c = await one(env, `/rest/v1/companies?id=eq.${id}&select=company_name,logo_url,logo_status`);
+    if (!c || c.logo_status !== "pending") return [];
+    return [{ to: team, subject: `Logo para aprovar: ${line(c.company_name, 60)}`,
+      text: `${line(c.company_name, 80)} enviou a logo e autorizou a exibição em Empresas Parceiras.\n${c.logo_url || ""}\n\nAprove ou recuse em ${site}/equipe/ (aba Empresas).` }];
+  }
+
   if (type === "mensagem_nova") {
     const m = await one(env, `/rest/v1/quote_messages?id=eq.${id}&select=quote_id,sender_id`);
     if (!m) return [];

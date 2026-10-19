@@ -683,6 +683,61 @@
     }).catch(function (err) { shell('<div class="err">' + e(friendly(err)) + "</div>", "pedidos", head); });
   }
 
+  // logo: PNG para manter o fundo transparente
+  function resizeLogo(file) {
+    return new Promise(function (res, rej) {
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onload = function () {
+        var k = Math.min(1, 600 / Math.max(img.width, img.height));
+        var cv = document.createElement("canvas"); cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
+        cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+        URL.revokeObjectURL(url);
+        cv.toBlob(function (b) { b ? res(b) : rej(new Error("imagem")); }, "image/png");
+      };
+      img.onerror = function () { rej(new Error("Não consegui abrir essa imagem. Use PNG ou JPG.")); };
+      img.src = url;
+    });
+  }
+  var LOGO_ST = { pending: ["Em análise pela equipe", "warn"], approved: ["Publicada no site", "ok"], rejected: ["Recusada: envie outra imagem", "err"] };
+  function logoCard() {
+    var c = me || {}, st = LOGO_ST[c.logo_status];
+    return '<div class="card" id="logocard"><h3>Empresas Parceiras</h3><p class="muted small" style="margin:4px 0 12px">Mostre a logo da sua empresa no site do SpeakerConnect, na seção Empresas Parceiras. É opcional e você pode retirar quando quiser.</p>' +
+      '<div class="logobox">' + (c.logo_url ? '<img src="' + e(c.logo_url) + '" alt="Logo da empresa">' : '<span class="muted small">Sem logo</span>') + "</div>" +
+      (st && c.logo_consent ? '<p style="margin:10px 0 0"><span class="pill ' + st[1] + '">' + st[0] + "</span></p>" : "") +
+      '<label for="lg" class="btn slim ghost" style="margin:12px 0 0;cursor:pointer">' + (c.logo_url ? "Trocar logo" : "Enviar logo") + '</label><input type="file" id="lg" accept="image/png,image/jpeg,image/webp" hidden>' +
+      '<p class="hint">Use PNG com fundo transparente, se tiver. A imagem é revisada pela equipe antes de aparecer.</p>' +
+      '<label class="check"><input type="checkbox" id="lgok"' + (c.logo_consent ? " checked" : "") + (c.logo_url ? "" : " disabled") + '><span>Autorizo o SpeakerConnect a exibir o nome e a logo da empresa no site, na seção Empresas Parceiras.</span></label>' +
+      (c.logo_url ? '<button class="full linkbtn" id="lgdel" type="button">Remover logo</button>' : "") + "</div>";
+  }
+  function bindLogo() {
+    var box = $("logocard");
+    if (!box) return;
+    function redraw() { return loadMe().then(function () { box.outerHTML = logoCard(); bindLogo(); }); }
+    function save(patch, ok) {
+      return sb.from("companies").update(patch).eq("id", user.id).then(function (r) {
+        if (r.error) throw r.error;
+        return redraw().then(function () { if (ok) toast(ok); });
+      }).catch(function (err) { toast(friendly(err)); });
+    }
+    $("lg").onchange = function () {
+      var f = this.files && this.files[0];
+      if (!f) return;
+      if (f.size > 12 * 1024 * 1024) { toast("Imagem muito grande."); return; }
+      toast("Enviando logo…");
+      resizeLogo(f).then(function (blob) {
+        var path = user.id + "/logo-" + Date.now() + ".png";
+        return sb.storage.from("fotos").upload(path, blob, { contentType: "image/png", upsert: false }).then(function (r) {
+          if (r.error) throw r.error;
+          return save({ logo_url: sb.storage.from("fotos").getPublicUrl(path).data.publicUrl }, (me && me.logo_consent) ? "Logo enviada para análise." : "Logo enviada. Marque a autorização para aparecer no site.");
+        });
+      }).catch(function (err) { toast(friendly(err)); });
+    };
+    $("lgok").onchange = function () {
+      save({ logo_consent: this.checked }, this.checked ? "Autorização registrada. A logo vai para análise." : "Autorização retirada. A logo saiu do site.");
+    };
+    if ($("lgdel")) $("lgdel").onclick = function () { save({ logo_url: null, logo_consent: false }, "Logo removida."); };
+  }
+
   // ---------- perfil do palestrante ----------
   function resizeImage(file, maxSide) {
     return new Promise(function (res, rej) {
@@ -911,6 +966,7 @@
         '<div class="row"><div style="flex:2"><label for="ci">Cidade</label><input id="ci" maxlength="60" value="' + e(c.city || "") + '"></div><div><label for="uf">UF</label>' + ufSelect("uf", c.uf) + "</div></div>" +
         '<label for="ws">Site <span class="opt">(opcional)</span></label><input id="ws" maxlength="200" value="' + e(c.website || "") + '">' : "") +
       '<div id="msg" role="alert"></div><button class="full" id="save">Salvar</button></form>';
+    if (co) html += logoCard();
     if (profile.role === "speaker") html += '<div id="mpbox"></div>' + seloCard();
     if (pkSupported()) html += '<div class="card" id="pkcard"><h3>Entrar com ' + e(pkLabel()) + '</h3><p class="muted small" style="margin:4px 0 0">Entre no app sem digitar a senha, usando o desbloqueio do seu aparelho. A senha continua valendo.</p><div id="pklist"><p class="muted small">Carregando…</p></div><button class="full" id="pkadd" type="button">' + icon("face", 20) + "Ativar neste aparelho</button></div>";
     html += supportCard();
@@ -924,6 +980,7 @@
     if (back === "erro") toast("Não foi possível conectar a conta. Tente de novo.");
     if (profile.role === "speaker") loadMpConn().then(function () { var bx = $("mpbox"); if (bx) { bx.innerHTML = mpCard(); bindMp(); } });
     if ($("pkcard")) bindPasskeyCard();
+    bindLogo();
     $("f").onsubmit = function (ev) {
       ev.preventDefault();
       var btn = $("save"), ph = val("ph").replace(/\D/g, ""), cj = co ? val("cj").replace(/\D/g, "") : "";
