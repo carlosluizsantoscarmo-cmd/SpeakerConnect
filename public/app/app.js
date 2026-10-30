@@ -36,6 +36,7 @@
     if (/already registered|already been registered|already exists/i.test(m)) return "Este e-mail já tem cadastro. Use a opção Entrar.";
     if (/not confirmed/i.test(m)) return "Confirme seu e-mail (veja a caixa de entrada) antes de entrar.";
     if (/password/i.test(m) && /(short|least|weak|characters)/i.test(m)) return "A senha precisa ter pelo menos 8 caracteres.";
+    if (/captcha/i.test(m)) return "Não conseguimos confirmar que você não é um robô. Atualize a página e tente de novo (se usa bloqueador de anúncios, libere o speakerconnect.com.br).";
     if (/rate limit|too many/i.test(m)) return "Muitas tentativas. Espere um pouco e tente de novo.";
     if (/failed to fetch|network|load failed/i.test(m)) return "Sem conexão. Confira a internet e tente de novo.";
     if (/row-level security|permission denied|42501/i.test(m)) return "Sem permissão para essa ação.";
@@ -161,6 +162,7 @@
       '<label for="pw">Senha</label><input id="pw" type="password" autocomplete="' + (signup ? "new-password" : "current-password") + '" minlength="8" required>' +
       (signup ? '<p class="hint">Pelo menos 8 caracteres.</p><label class="check"><input type="checkbox" id="tc"><span>Li e aceito os <a href="/termos.html" target="_blank">termos de uso</a> e a <a href="/privacidade.html" target="_blank">política de privacidade</a>.</span></label>' : "") +
       '<input class="hp" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+      '<div id="cfts" style="margin:12px 0 0"></div>' +
       '<div id="msg" role="alert"></div>' +
       '<button class="full" id="go" type="submit">' + (signup ? "Criar conta" : "Entrar") + "</button>" +
       (signup ? "" : '<p class="center" style="margin:12px 0 0"><a href="#/esqueci">Esqueci minha senha</a></p>') +
@@ -171,6 +173,7 @@
       signup ? "Leva menos de um minuto." : "Entre para ver seus pedidos e propostas."
     );
     bindInstall();
+    SCCaptcha.montar($("cfts"));
     var pk = $("pk");
     if (pk) pk.onclick = function () {
       var msg = $("msg");
@@ -198,11 +201,13 @@
       function fail(t) { msg.innerHTML = '<div class="err">' + e(t) + "</div>"; }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) return fail("Confira o e-mail.");
       if (pw.length < 8) return fail("A senha precisa ter pelo menos 8 caracteres.");
+      if (SCCaptcha.falta()) return fail("Aguarde a verificação anti-robô terminar (a caixa acima) e tente de novo.");
       busy(btn, true);
       if (!signup) {
         try { if (pkSupported()) sessionStorage.setItem("sc_offer_pk", "1"); } catch (x) {}
-        sb.auth.signInWithPassword({ email: em, password: pw }).then(function (r) {
+        sb.auth.signInWithPassword({ email: em, password: pw, options: { captchaToken: SCCaptcha.token() } }).then(function (r) {
           busy(btn, false);
+          SCCaptcha.reset();
           if (r.error) { try { sessionStorage.removeItem("sc_offer_pk"); } catch (x) {} return fail(friendly(r.error)); }
         });
         return;
@@ -214,8 +219,9 @@
       if (!$("tc").checked) { busy(btn, false); return fail("Marque o aceite dos termos para continuar."); }
       var data = { role: tipo, name: nm, phone: ph || null, terms_version: TERMS };
       if (tipo === "company") data.company_name = cn;
-      sb.auth.signUp({ email: em, password: pw, options: { data: data, emailRedirectTo: location.origin + "/app/" } }).then(function (r) {
+      sb.auth.signUp({ email: em, password: pw, options: { data: data, emailRedirectTo: location.origin + "/app/", captchaToken: SCCaptcha.token() } }).then(function (r) {
         busy(btn, false);
+        SCCaptcha.reset();
         if (r.error) return fail(friendly(r.error));
         if (!r.data.session) {
           plain('<div class="card"><h3>Confirme seu e-mail</h3><p class="muted" style="margin:6px 0 0">Mandamos um link para <b>' + e(em) + '</b>. Abra o e-mail e toque no link para ativar a conta. Se não chegar em alguns minutos, veja a caixa de spam.</p></div><a class="btn full ghost" href="#/entrar">Já confirmei, quero entrar</a>', "Quase lá");
@@ -225,15 +231,18 @@
   }
 
   function screenForgot() {
-    plain('<form class="card" id="f" novalidate><label for="em">E-mail da conta</label><input id="em" type="email" autocomplete="email"><div id="msg" role="alert"></div><button class="full" id="go">Enviar link</button></form><p class="center"><a href="#/entrar">Voltar</a></p>',
+    plain('<form class="card" id="f" novalidate><label for="em">E-mail da conta</label><input id="em" type="email" autocomplete="email"><div id="cfts" style="margin:12px 0 0"></div><div id="msg" role="alert"></div><button class="full" id="go">Enviar link</button></form><p class="center"><a href="#/entrar">Voltar</a></p>',
       "Esqueci minha senha", "Mandamos um link para você criar uma nova.");
+    SCCaptcha.montar($("cfts"));
     $("f").onsubmit = function (ev) {
       ev.preventDefault();
       var em = val("em"), btn = $("go");
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { $("msg").innerHTML = '<div class="err">Confira o e-mail.</div>'; return; }
+      if (SCCaptcha.falta()) { $("msg").innerHTML = '<div class="err">Aguarde a verificação anti-robô terminar e tente de novo.</div>'; return; }
       busy(btn, true);
-      sb.auth.resetPasswordForEmail(em, { redirectTo: location.origin + "/app/" }).then(function (r) {
+      sb.auth.resetPasswordForEmail(em, { redirectTo: location.origin + "/app/", captchaToken: SCCaptcha.token() }).then(function (r) {
         busy(btn, false);
+        SCCaptcha.reset();
         $("msg").innerHTML = r.error ? '<div class="err">' + e(friendly(r.error)) + "</div>" : '<div class="okmsg">Se este e-mail tiver cadastro, o link chega em alguns minutos.</div>';
       });
     };

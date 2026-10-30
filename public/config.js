@@ -12,6 +12,9 @@ window.SC = {
   instagram: "https://www.instagram.com/speakerconnect.com.br/",
   linkedin: "https://www.linkedin.com/company/145289979/",
   // Mostrados nas páginas (o valor cobrado de verdade é definido no Cloudflare).
+  // Cloudflare Turnstile (anti-robô) no login, cadastro e "esqueci minha senha". Vazio = desligado.
+  // A Secret Key NÃO vai aqui: ela fica no Supabase (Authentication > Attack Protection).
+  turnstile: "0x4AAAAAAFtBdB9QtTL-OO2z",
   commissionPct: 20,
   verifiedPrice: "R$ 199,00 por ano"
 };

@@ -1,6 +1,6 @@
 // Service worker do app: guarda só os arquivos da própria tela para abrir mais rápido e mostrar algo sem internet.
 // Nunca guarda dados do Supabase nem de pagamento.
-const V = "sc-app-v1";
+const V = "sc-app-v2";
 const SHELL = ["./", "app.css", "app.js", "manifest.webmanifest", "icon-192.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(V).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => {

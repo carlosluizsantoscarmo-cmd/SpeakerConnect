@@ -106,6 +106,7 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2"></script>
 <script src="/config.js"></script>
+<script src="/captcha.js"></script>
 <script>
 (function () {
   "use strict";
@@ -155,6 +156,7 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     $("tabs").hidden = true; $("who").innerHTML = "";
     main.innerHTML = '<form class="login" id="f"><h1>Área da equipe</h1><p style="color:var(--mut);margin:6px 0 0">Entre com a conta de administrador do app.</p>' +
       '<label for="em">E-mail</label><input id="em" type="email" autocomplete="email"><label for="pw">Senha</label><input id="pw" type="password" autocomplete="current-password">' +
+      '<div id="cfts" style="margin-top:14px"></div>' +
       (msg ? '<div class="err">' + e(msg) + "</div>" : "") + '<button style="width:100%;justify-content:center;margin-top:16px" id="go">Entrar</button>' +
       (pkOk() ? '<button type="button" class="ghost" style="width:100%;justify-content:center;margin-top:10px" id="pk">Entrar com Face ID ou digital</button>' : "") +
       '<p style="font-size:13.5px;color:var(--mut);margin:14px 0 0">Esqueceu a senha? Use "Esqueci minha senha" no <a href="/app/">app</a>.</p></form>';
@@ -165,11 +167,15 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
         if (r && r.error) screenLogin(pkMsg(r.error));
       }, function (err) { b.disabled = false; screenLogin(pkMsg(err)); });
     };
+    SCCaptcha.montar($("cfts"));
     $("f").onsubmit = function (ev) {
-      ev.preventDefault(); $("go").disabled = true;
-      sb.auth.signInWithPassword({ email: $("em").value.trim(), password: $("pw").value }).then(function (r) {
+      ev.preventDefault();
+      if (SCCaptcha.falta()) { screenLogin("Aguarde a verificação anti-robô terminar e tente de novo."); return; }
+      $("go").disabled = true;
+      sb.auth.signInWithPassword({ email: $("em").value.trim(), password: $("pw").value, options: { captchaToken: SCCaptcha.token() } }).then(function (r) {
         $("go").disabled = false;
-        if (r.error) screenLogin(/invalid/i.test(r.error.message) ? "E-mail ou senha incorretos." : r.error.message);
+        SCCaptcha.reset();
+        if (r.error) screenLogin(/invalid/i.test(r.error.message) ? "E-mail ou senha incorretos." : /captcha/i.test(r.error.message) ? "Não foi possível confirmar que você não é um robô. Atualize a página e tente de novo." : r.error.message);
       });
     };
   }
