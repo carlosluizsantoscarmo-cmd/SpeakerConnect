@@ -872,6 +872,11 @@ revoke execute on function public.partner_logos() from public;
 grant execute on function public.partner_logos() to anon, authenticated;
 revoke execute on function private.on_company_logo() from public, anon, authenticated;
 
+-- ---------- lembrete de perfil incompleto ----------
+-- O servidor envia até 2 e-mails para quem ficou em rascunho (1 dia e 4 dias depois do cadastro).
+alter table public.speakers add column if not exists profile_reminders smallint not null default 0;
+alter table public.speakers add column if not exists profile_reminded_at timestamptz;
+
 -- ---------- primeiro acesso da equipe ----------
 -- Depois de criar sua conta pelo app, rode (trocando o e-mail):
 --   update public.profiles set role = 'admin' where email = 'seu-email@exemplo.com';

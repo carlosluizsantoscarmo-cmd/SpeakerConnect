@@ -739,6 +739,76 @@ async function sitemap(request, env) {
   return new Response(xml, { headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" } });
 }
 
+// ---------- lembrete de perfil incompleto (roda 1x por dia pelo agendador do Cloudflare) ----------
+// 1º lembrete: 1 dia depois do cadastro. 2º: 3 dias depois do 1º. Depois disso, para.
+const DAY = 864e5;
+const REMINDER_COLS = "id,public_name,headline,bio,categories,topics,city,fee_from_cents,photo_url,created_at,profile_reminders,profile_reminded_at";
+
+export function missingProfile(s, doc) {
+  const m = [];
+  if (!s.photo_url) m.push("foto");
+  if (!s.headline) m.push("título (uma frase sobre o que você faz)");
+  if (!s.bio || String(s.bio).trim().length < 80) m.push("apresentação (sua experiência e trajetória)");
+  if (!Array.isArray(s.categories) || !s.categories.length) m.push("temas");
+  if (!s.topics) m.push("suas palestras (títulos e um resumo de cada)");
+  if (!s.city) m.push("cidade");
+  if (!s.fee_from_cents) m.push("valor de referência");
+  if (!doc || !doc.front_path) m.push("foto do documento (só a equipe vê)");
+  if (!doc || !doc.terms_version) m.push("aceite do termo do palestrante");
+  return m;
+}
+
+export function reminderDue(s, now) {
+  const n = Number(s.profile_reminders) || 0;
+  if (n === 0) return now - Date.parse(s.created_at) >= DAY;
+  if (n === 1) return now - Date.parse(s.profile_reminded_at || 0) >= 3 * DAY;
+  return false;
+}
+
+export function reminderMail(env, s, p, miss) {
+  const second = (Number(s.profile_reminders) || 0) >= 1;
+  const nome = first(p.name || s.public_name) || "tudo bem";
+  const abre = second
+    ? "Passando para lembrar: seu perfil no SpeakerConnect ainda está em rascunho, e as empresas só encontram perfis aprovados."
+    : "Obrigado por se cadastrar no SpeakerConnect! Seu perfil ainda está em rascunho, e as empresas só encontram perfis aprovados.";
+  const meio = miss.length
+    ? "Falta completar:\n" + miss.map((x) => "• " + x).join("\n") + '\n\nDepois é só tocar em "Salvar e enviar para análise".'
+    : 'Está tudo preenchido! Só falta tocar em "Salvar e enviar para análise".';
+  return {
+    to: p.email,
+    subject: second ? "Seu perfil de palestrante ainda não está no ar" : "Falta pouco para seu perfil aparecer para as empresas",
+    text: `Olá, ${nome}!\n\n${abre}\n\n${meio} Nossa equipe revisa em até 2 dias úteis.\n\nCompletar agora: ${siteBase(env)}/app/#/perfil\n\nPrecisa de ajuda? É só responder este e-mail.\n\nVocê recebe este e-mail porque criou uma conta de palestrante no ${BRAND}.`,
+  };
+}
+
+export async function profileReminders(env, now = Date.now()) {
+  if (!configured(env) || !env.RESEND_API_KEY) return 0;
+  const rows = await sb(env, `/rest/v1/speakers?status=eq.draft&profile_reminders=lt.2&select=${REMINDER_COLS}&order=created_at.asc&limit=300`);
+  const due = (Array.isArray(rows) ? rows : []).filter((s) => UUID.test(s.id || "") && reminderDue(s, now)).slice(0, 50);
+  if (!due.length) return 0;
+  const ids = due.map((s) => s.id).join(",");
+  const [docs, profs] = await Promise.all([
+    sb(env, `/rest/v1/speaker_documents?speaker_id=in.(${ids})&select=speaker_id,front_path,terms_version`),
+    sb(env, `/rest/v1/profiles?id=in.(${ids})&select=id,name,email`),
+  ]);
+  let sent = 0;
+  for (const s of due) {
+    const p = (profs || []).find((x) => x.id === s.id);
+    if (!p || !p.email) continue;
+    const mail = reminderMail(env, s, p, missingProfile(s, (docs || []).find((d) => d.speaker_id === s.id)));
+    // Marca antes de enviar: se a marcação falhar, não envia (nunca manda o mesmo lembrete duas vezes).
+    try {
+      const n = Number(s.profile_reminders) || 0;
+      const upd = await sb(env, `/rest/v1/speakers?id=eq.${s.id}&status=eq.draft&profile_reminders=eq.${n}`, {
+        method: "PATCH", body: { profile_reminders: n + 1, profile_reminded_at: new Date(now).toISOString() }, prefer: "return=representation",
+      });
+      if (!Array.isArray(upd) || !upd.length) continue;
+    } catch (e) { console.error("lembrete: não consegui marcar", s.id, e && e.message); continue; }
+    if (await sendMail(env, mail)) sent++;
+  }
+  return sent;
+}
+
 // ---------- roteador ----------
 const routes = {
   "/api/mp/config": { GET: mpConfigGet },
@@ -768,5 +838,10 @@ export default {
     }
     if (pathname === "/sitemap.xml") return sitemap(request, env);
     return env.ASSETS.fetch(request);
+  },
+  // Agendador do Cloudflare (ver "triggers" no wrangler.jsonc): lembretes diários de perfil incompleto.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(profileReminders(env).then((n) => console.log("lembretes de perfil enviados:", n))
+      .catch((e) => console.error("lembretes de perfil falharam:", e && e.message)));
   },
 };

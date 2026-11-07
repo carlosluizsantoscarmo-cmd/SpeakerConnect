@@ -9,6 +9,8 @@
     "not_found_handling": "404-page",
     "run_worker_first": ["/api/*", "/palestrante", "/palestrante.html", "/sitemap.xml"]
   },
+  // Agendador: todo dia às 12:00 UTC (9h em Brasília) envia os lembretes de perfil incompleto.
+  "triggers": { "crons": ["0 12 * * *"] },
   "vars": {
     // Troque pelos endereços do seu domínio (e do workers.dev, se quiser testar por ele).
     "SITE_URL": "https://speakerconnect.com.br",
