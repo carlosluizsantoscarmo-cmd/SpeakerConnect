@@ -727,7 +727,7 @@ async function profilePage(request, env) {
   return new Response(html, { status: 200, headers });
 }
 
-const STATIC_PAGES = ["/", "/termos", "/privacidade", "/termo-palestrante"];
+const STATIC_PAGES = ["/", "/sobre", "/termos", "/privacidade", "/termo-palestrante"];
 async function sitemap(request, env) {
   const base = siteBase(env);
   let rows = [];

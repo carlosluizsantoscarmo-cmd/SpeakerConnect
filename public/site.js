@@ -39,7 +39,7 @@
       top.className = "nav";
       top.innerHTML = '<div class="wrap"><a class="logo" href="/" aria-label="SpeakerConnect, página inicial">' + MIC + "SpeakerConnect</a>" +
         '<button class="menu-btn" type="button" aria-expanded="false" aria-controls="menu" aria-label="Abrir menu"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>' +
-        '<nav id="menu" aria-label="Principal"><a href="/#palestrantes">Palestrantes</a><a href="/#como-funciona">Como funciona</a><a href="/#para-palestrantes">Para palestrantes</a>' +
+        '<nav id="menu" aria-label="Principal"><a href="/#palestrantes">Palestrantes</a><a href="/#como-funciona">Como funciona</a><a href="/#para-palestrantes">Para palestrantes</a><a href="/sobre">Quem somos</a>' +
         (loggedIn() ? '<a href="/app/#/sair">Sair</a><a class="btn spot" href="/app/">Minha conta</a>' : '<a class="btn spot" href="/app/">Entrar ou cadastrar-se</a>') + "</nav></div>";
       var b = top.querySelector(".menu-btn"), m = top.querySelector("nav");
       b.onclick = function () { var o = m.classList.toggle("open"); b.setAttribute("aria-expanded", o ? "true" : "false"); };
@@ -49,7 +49,7 @@
     if (f) {
       f.innerHTML = '<div class="wrap"><div><a class="logo" href="/">' + MIC + "SpeakerConnect</a>" +
         '<p class="small" style="margin-top:10px;max-width:38ch">Palestrantes para eventos corporativos, SIPAT, convenções e treinamentos, com orçamento e pagamento pela plataforma.</p></div>' +
-        '<div><nav aria-label="Rodapé"><a href="/termos.html">Termos de uso</a><a href="/privacidade.html">Privacidade</a><a href="/app/">Entrar</a></nav>' +
+        '<div><nav aria-label="Rodapé"><a href="/sobre">Quem somos</a><a href="/termos.html">Termos de uso</a><a href="/privacidade.html">Privacidade</a><a href="/app/">Entrar</a></nav>' +
         (C.email ? '<p class="small" style="margin-top:12px">Contato: <a href="mailto:' + e(C.email) + '">' + e(C.email) + "</a></p>" : "") +
         socialLinks() +
         '<p class="small">© ' + new Date().getFullYear() + " SpeakerConnect · CNPJ 46.090.377/0001-80 · Serra/ES</p></div></div>";
