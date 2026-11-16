@@ -663,7 +663,9 @@ begin
   if s ~ '[a-z0-9._%+-]+\s*(@|\(at\)|\[at\]|\marroba\M)\s*[a-z0-9-]+\s*(\.|\(dot\)|\mponto\M)\s*[a-z]{2,}' then return true; end if;
   -- links e domínios
   if s ~ '(https?:|www\.|wa\.me|api\.whatsapp|bit\.ly|linktr\.ee|t\.me/|instagram\.com|linkedin\.com|facebook\.com|tiktok\.com|youtube\.com/@)' then return true; end if;
-  if s ~ '\m[a-z0-9-]{2,}\s*\.\s*(com|net|org|br|me|io|app|site|online|link|bio)\M' then return true; end if;
+  -- domínio colado ("site.com") ou com espaços na mesma linha ("site . com"); "vida.\n\nCom uma" é fim de frase, não domínio
+  if s ~ '\m[a-z0-9-]{2,}\.(com|net|org|br|me|io|app|site|online|link|bio)\M' then return true; end if;
+  if s ~ '\m[a-z0-9-]{2,}[ \t]*\.[ \t]*(com|net|org|br|me|io|app|site|online|link|bio)\M(?![ \t\n]*[a-z0-9])' then return true; end if;
   -- @ de rede social
   if s ~ '(^|[^a-z0-9._])@[a-z0-9._]{3,}' then return true; end if;
   -- palavras de contato ou de pagamento por fora
