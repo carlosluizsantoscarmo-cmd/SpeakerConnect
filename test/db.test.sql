@@ -197,6 +197,22 @@ select tst.eq('contato liberado após pagamento', $$select speaker_phone from qu
 select tst.ok('depois do pagamento o chat fica livre', $$insert into quote_messages(quote_id, body) values ('10000000-0000-0000-0000-000000000001','meu whats é 27 99999-0000')$$);
 select tst.eq('empresa vê o próprio pagamento', $$select count(*)::text from payments$$, '1');
 select tst.no('empresa não altera pagamento', $$update payments set status='refunded'$$);
+select tst.no('empresa não mexe no sinal', $$update quotes set deposit_cents=100$$);
+select tst.no('empresa não marca saldo como pago', $$update quotes set balance_paid_at=now()$$);
+reset role;
+-- sinal pago e saldo em aberto: a empresa não pode marcar como realizado
+set role service_role; select set_config('request.jwt.claim.role', 'service_role', false);
+select tst.ok('servidor grava o sinal', $$update quotes set deposit_cents=240000, deposit_paid_at=now(), balance_due_on=current_date+30$$);
+select set_config('request.jwt.claim.role', '', false);
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000003', false);
+select tst.no('realizado barrado com saldo em aberto', $$update quotes set status='done'$$);
+reset role;
+set role service_role; select set_config('request.jwt.claim.role', 'service_role', false);
+select tst.ok('servidor grava o saldo pago', $$update quotes set balance_paid_at=now()$$);
+select set_config('request.jwt.claim.role', '', false);
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000003', false);
 select tst.ok('empresa marca evento como realizado', $$update quotes set status='done'$$);
 reset role;
 set role authenticated; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000001', false);

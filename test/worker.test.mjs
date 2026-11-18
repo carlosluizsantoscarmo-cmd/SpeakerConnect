@@ -1,14 +1,14 @@
 // Testes do servidor com Supabase, Mercado Pago e Resend de mentira. Rodar: node --test test/worker.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { mpSignatureValid, split, brl, seal, makeState } from "../worker.js";
+import worker, { mpSignatureValid, split, brl, seal, makeState, chargePlan, balanceStep, balanceMails, addDays, todaySP } from "../worker.js";
 
 const SPEAKER = "00000000-0000-0000-0000-000000000001";
 const COMPANY = "00000000-0000-0000-0000-000000000003";
 const ADMIN = "00000000-0000-0000-0000-00000000000a";
 const QUOTE = "10000000-0000-0000-0000-000000000001";
 
-async function setup({ speakerStatus = "approved", quoteStatus = "accepted", mpAmount, connected = true, cardStatus = "approved" } = {}) {
+async function setup({ speakerStatus = "approved", quoteStatus = "accepted", mpAmount, connected = true, cardStatus = "approved", eventDate = "2026-11-20" } = {}) {
   const db = {
     profiles: [
       { id: SPEAKER, role: "speaker", name: "Ana Palestrante", email: "ana@x.com", phone: "27999990001" },
@@ -17,7 +17,7 @@ async function setup({ speakerStatus = "approved", quoteStatus = "accepted", mpA
     ],
     speakers: [{ id: SPEAKER, public_name: "Ana Palestrante", status: speakerStatus, verified_until: null }],
     quotes: [{ id: QUOTE, company_id: COMPANY, speaker_id: SPEAKER, title: "SIPAT 2026", status: quoteStatus, amount_cents: 800000,
-               company_name: "Empresa Boa", speaker_name: "Ana Palestrante", event_date: "2026-11-20", format: "presencial", city: "Serra", uf: "ES" }],
+               company_name: "Empresa Boa", speaker_name: "Ana Palestrante", event_date: eventDate, format: "presencial", city: "Serra", uf: "ES" }],
     quote_messages: [],
     payments: [],
     speaker_mp_accounts: [],
@@ -274,4 +274,79 @@ test("excluir conta do palestrante apaga também o documento", async () => {
   const t = await setup({ quoteStatus: "done" });
   assert.equal((await t.call("/api/conta", { method: "DELETE", token: "a.b.ana" })).status, 200);
   assert.deepEqual(t.deleted, [SPEAKER + "/doc-frente.jpg", SPEAKER]);
+});
+
+// ---------- sinal e saldo ----------
+const NOW = Date.parse("2026-11-18T15:00:00Z");
+test("plano de cobrança: sinal de 30% com evento distante, integral com evento perto ou sem data", () => {
+  const env = {};
+  const q = { status: "accepted", amount_cents: 800000, event_date: "2027-01-20" };
+  assert.deepEqual(chargePlan(env, q, NOW), { stage: "deposit", cents: 240000, due: "2027-01-13" });
+  assert.deepEqual(chargePlan(env, { ...q, event_date: "2026-11-25" }, NOW), { stage: "full", cents: 800000 }, "7 dias: integral");
+  assert.deepEqual(chargePlan(env, { ...q, event_date: "2026-11-26" }, NOW).stage, "deposit", "8 dias: sinal");
+  assert.deepEqual(chargePlan(env, { ...q, event_date: null }, NOW), { stage: "full", cents: 800000 });
+  assert.deepEqual(chargePlan(env, { status: "paid", amount_cents: 800000, deposit_cents: 240000, balance_due_on: "2027-01-13" }, NOW), { stage: "balance", cents: 560000, due: "2027-01-13" });
+  assert.equal(chargePlan(env, { status: "paid", amount_cents: 800000, deposit_cents: 240000, balance_paid_at: "x" }, NOW), null);
+  assert.equal(chargePlan(env, { status: "paid", amount_cents: 800000 }, NOW), null, "pago integral");
+  assert.equal(chargePlan({ DEPOSIT_PCT: "50" }, q, NOW).cents, 400000);
+});
+
+test("sinal e saldo: duas cobranças, pedido confirmado no sinal e quitado no saldo", async () => {
+  const ev = addDays(todaySP(), 60);
+  const t = await setup({ eventDate: ev });
+  let d = await (await t.call("/api/mp/pagar", { method: "POST", token: "a.b.carla", body: { kind: "quote", quote_id: QUOTE, ...card } })).json();
+  assert.equal(d.ok, true);
+  let mpc = t.mpCalls.filter((c) => c.path === "/v1/payments" && c.method === "POST")[0];
+  assert.equal(mpc.body.transaction_amount, 2400, "sinal de 30%");
+  assert.equal(mpc.body.application_fee, 360, "comissão sobre o sinal");
+  const q = t.db.quotes[0];
+  assert.equal(q.status, "paid", "data confirmada e contato liberado");
+  assert.equal(q.deposit_cents, 240000);
+  assert.equal(q.balance_due_on, addDays(ev, -7));
+  assert.equal(t.db.payments[0].stage, "deposit");
+  await tick();
+  assert.match(t.mails.find((m) => m.to[0] === "rh@x.com").text, /Saldo: R\$ 5\.600,00/);
+  const cfg = await (await t.call("/api/mp/config?quote_id=" + QUOTE, { token: "a.b.carla" })).json();
+  assert.deepEqual([cfg.amount_cents, cfg.stage], [560000, "balance"]);
+  d = await (await t.call("/api/mp/pagar", { method: "POST", token: "a.b.carla", body: { kind: "quote", quote_id: QUOTE, ...card } })).json();
+  assert.equal(d.ok, true);
+  mpc = t.mpCalls.filter((c) => c.path === "/v1/payments" && c.method === "POST")[1];
+  assert.equal(mpc.body.transaction_amount, 5600, "saldo");
+  assert.ok(q.balance_paid_at, "saldo quitado");
+  assert.equal(t.db.payments[1].stage, "balance");
+  const r = await t.call("/api/mp/pagar", { method: "POST", token: "a.b.carla", body: { kind: "quote", quote_id: QUOTE, ...card } });
+  assert.equal(r.status, 400, "nada mais a pagar");
+});
+
+test("reembolso com taxa: devolve o sinal menos 10% e cancela o pedido", async () => {
+  const t = await setup({ eventDate: addDays(todaySP(), 60) });
+  await t.call("/api/mp/pagar", { method: "POST", token: "a.b.carla", body: { kind: "quote", quote_id: QUOTE, ...card } });
+  const pay = t.db.payments[0];
+  const r = await t.call("/api/reembolso", { method: "POST", token: "a.b.equipe", body: { payment_id: pay.id, fee: true } });
+  assert.equal(r.status, 200);
+  const rc = t.mpCalls.find((c) => c.path.endsWith("/refunds"));
+  assert.deepEqual(rc.body, { amount: 2160 });
+  assert.equal(pay.refunded_cents, 216000);
+  assert.equal(pay.status, "refunded");
+  assert.equal(t.db.quotes[0].status, "cancelled");
+  // o aviso do Mercado Pago continua "approved" (devolução parcial): não pode confirmar de novo
+  const h = await signed(t.env, pay.mp_payment_id);
+  await t.call("/api/mp-webhook?data.id=" + pay.mp_payment_id + "&type=payment", { method: "POST", headers: h, body: { type: "payment", data: { id: pay.mp_payment_id } } });
+  assert.equal(pay.status, "refunded");
+  assert.equal(t.db.quotes[0].status, "cancelled");
+});
+
+test("lembretes do saldo: 7 dias antes, 1 dia antes e vencido", () => {
+  const q = { balance_due_on: "2026-12-10", balance_reminders: 0 };
+  assert.equal(balanceStep(q, "2026-12-01"), null);
+  assert.equal(balanceStep(q, "2026-12-03"), 0);
+  assert.equal(balanceStep({ ...q, balance_reminders: 1 }, "2026-12-05"), null);
+  assert.equal(balanceStep({ ...q, balance_reminders: 1 }, "2026-12-09"), 1);
+  assert.equal(balanceStep({ ...q, balance_reminders: 2 }, "2026-12-11"), 2);
+  assert.equal(balanceStep({ ...q, balance_reminders: 3 }, "2026-12-20"), null);
+  assert.equal(balanceStep(q, "2026-12-09"), 1, "pulou direto para a véspera");
+  const ms = balanceMails({ SITE_URL: "https://s.t", NOTIFY_EMAIL: "eq@x" }, { id: "q", title: "SIPAT", amount_cents: 800000, deposit_cents: 240000, balance_due_on: "2026-12-10", event_date: "2026-12-17", company_name: "Emp", speaker_name: "Ana" },
+    { name: "Carla", email: "c@x" }, { name: "Ana", email: "a@x" }, 2);
+  assert.deepEqual(ms.map((m) => m.to), ["c@x", "a@x", "eq@x"]);
+  assert.match(ms[0].text, /R\$ 5\.600,00.*venceu em 10\/12\/2026/);
 });

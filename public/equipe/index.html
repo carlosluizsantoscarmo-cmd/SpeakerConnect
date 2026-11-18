@@ -85,6 +85,9 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
 .lgimg img{max-width:100%;max-height:74px;object-fit:contain}
 .lgi .acts{display:flex;gap:8px}
 .lgi .acts button{flex:1;padding:8px}
+h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
+.dt{font:800 20px var(--f-display);line-height:1}.dt small{display:block;font:600 12px var(--f-body);color:var(--mut);margin-top:3px;text-transform:capitalize}
+.stat.s-warn b{color:var(--warn)}.stat.s-err{border-color:#EBC1BD}.stat.s-err b{color:var(--err)}
 </style>
 </head>
 <body>
@@ -93,7 +96,8 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
   <nav id="tabs" hidden aria-label="Seções">
     <button data-t="palestrantes" class="on">Palestrantes<span class="n" id="n-pend" hidden></span></button>
     <button data-t="pedidos">Pedidos</button>
-    <button data-t="pagamentos">Pagamentos<span class="n" id="n-rep" hidden></span></button>
+    <button data-t="agenda">Agenda<span class="n" id="n-ag" hidden></span></button>
+    <button data-t="pagamentos">Financeiro<span class="n" id="n-rep" hidden></span></button>
     <button data-t="empresas">Empresas<span class="n" id="n-lg" hidden></span></button>
     <button data-t="temas">Temas</button>
     <button data-t="alertas">Alertas<span class="n" id="n-al" hidden></span></button>
@@ -118,6 +122,25 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
   function $(id) { return document.getElementById(id); }
   function toast(m) { var t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove("show"); }, 3000); }
   function initials(n) { var p = String(n || "?").trim().split(/\s+/); return ((p[0] || "?").charAt(0) + (p.length > 1 ? p[p.length - 1].charAt(0) : "")).toUpperCase(); }
+  // datas no fuso de Brasília (AAAA-MM-DD)
+  function today() { return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
+  function addDays(ymd, n) { return new Date(Date.parse(ymd + "T12:00:00Z") + n * 864e5).toISOString().slice(0, 10); }
+  function ymd(x) { return x ? String(x).slice(0, 10).split("-").reverse().join("/") : "—"; }
+  // situação financeira de um pedido
+  function fin(q) {
+    var r = { label: "", cls: "", open: 0, late: false };
+    if (q.status === "accepted") { r.label = "Aguardando " + (q.event_date && q.event_date > addDays(today(), 7) ? "sinal" : "pagamento"); r.cls = "warn"; return r; }
+    if (q.status === "cancelled" || q.status === "declined") { r.label = "Cancelado"; r.cls = "err"; return r; }
+    if (q.status !== "paid" && q.status !== "done") { r.label = "Em negociação"; return r; }
+    if (q.deposit_cents && !q.balance_paid_at) {
+      r.open = (q.amount_cents || 0) - q.deposit_cents;
+      r.late = !!(q.balance_due_on && q.balance_due_on < today());
+      r.label = r.late ? "Saldo atrasado (venceu " + ymd(q.balance_due_on) + ")" : "Sinal pago · saldo até " + ymd(q.balance_due_on);
+      r.cls = r.late ? "err" : "warn"; return r;
+    }
+    r.label = q.status === "done" ? "Realizado" : q.deposit_cents ? "Quitado" : "Pago"; r.cls = "ok"; return r;
+  }
+  function feePct() { var n = Number(C.cancelFeePct); return n > 0 && n < 100 ? n : 10; }
   function verified(s) { return !!(s.verified_until && (s.verified_until === "infinity" || new Date(s.verified_until) > new Date())); }
   function api(path, body) {
     return sb.auth.getSession().then(function (r) {
@@ -199,7 +222,10 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
       data.attempts = r[7].data || [];
       data.prof = {}; data.profiles.forEach(function (p) { data.prof[p.id] = p; });
       var pend = data.speakers.filter(function (s) { return s.status === "pending"; }).length;
-      var rep = data.payments.filter(function (p) { return p.kind === "quote" && p.status === "paid" && !p.payout_done_at; }).length;
+      var rep = data.payments.filter(function (p) { return p.kind === "quote" && p.status === "paid" && !p.payout_done_at; }).length +
+        data.quotes.filter(function (q) { return fin(q).late; }).length;
+      var t0 = today(), ag = data.quotes.filter(function (q) { return ["accepted", "paid"].indexOf(q.status) > -1 && q.event_date && q.event_date >= t0 && q.event_date <= addDays(t0, 7); }).length;
+      $("n-ag").hidden = !ag; $("n-ag").textContent = ag;
       $("n-pend").hidden = !pend; $("n-pend").textContent = pend;
       $("n-rep").hidden = !rep; $("n-rep").textContent = rep;
       var al = data.attempts.filter(function (a) { return Date.now() - new Date(a.created_at) < 7 * 864e5; }).length;
@@ -278,6 +304,44 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
 
   // ---------- pedidos ----------
   var QST = { requested: ["Aguardando proposta", "warn"], proposed: ["Proposta enviada", ""], accepted: ["Aguardando pagamento", "warn"], paid: ["Pago", "ok"], done: ["Realizado", "ok"], declined: ["Recusado", "err"], cancelled: ["Cancelado", "err"] };
+
+  // ---------- agenda de palestras ----------
+  var agFilter = "next";
+  function screenAgenda() {
+    var t0 = today();
+    var all = data.quotes.filter(function (q) { return ["accepted", "paid", "done"].indexOf(q.status) > -1; });
+    var dated = all.filter(function (q) { return q.event_date; }), undated = all.filter(function (q) { return !q.event_date; });
+    var list = dated.filter(function (q) { return agFilter === "all" || (agFilter === "next" ? q.event_date >= t0 : q.event_date < t0); })
+      .sort(function (a, b) { return agFilter === "past" ? (a.event_date < b.event_date ? 1 : -1) : (a.event_date > b.event_date ? 1 : -1); });
+    var next30 = dated.filter(function (q) { return q.event_date >= t0 && q.event_date <= addDays(t0, 30) && q.status !== "done"; });
+    var html = '<div class="bar"><h1 class="grow">Agenda de palestras</h1><select id="agf">' + [["next", "Próximas"], ["past", "Já aconteceram"], ["all", "Todas"]].map(function (o) {
+      return '<option value="' + o[0] + '"' + (o[0] === agFilter ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></div>" +
+      '<div class="stats"><div class="stat"><b>' + dated.filter(function (q) { return q.event_date >= t0 && q.event_date <= addDays(t0, 7); }).length + "</b><span>Nos próximos 7 dias</span></div>" +
+      '<div class="stat"><b>' + next30.length + "</b><span>Nos próximos 30 dias</span></div>" +
+      '<div class="stat"><b>' + dated.filter(function (q) { return q.event_date >= t0 && q.status === "accepted"; }).length + "</b><span>Aguardando sinal/pagamento</span></div>" +
+      '<div class="stat ' + (all.some(function (q) { return fin(q).late; }) ? "s-err" : "") + '"><b>' + all.filter(function (q) { return fin(q).late; }).length + "</b><span>Com saldo atrasado</span></div></div>";
+    if (!list.length) html += '<div class="empty">Nenhuma palestra nesta lista.</div>';
+    var month = "";
+    list.forEach(function (q, i) {
+      var m = new Date(q.event_date + "T12:00:00Z").toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+      m = m.charAt(0).toUpperCase() + m.slice(1);
+      if (m !== month) { if (month) html += "</tbody></table></div>"; month = m; html += '<h2 class="mo">' + e(m) + '</h2><div class="scroll"><table><thead><tr><th>Data</th><th>Evento</th><th>Empresa → palestrante</th><th>Valor</th><th>Financeiro</th></tr></thead><tbody>'; }
+      html += agRow(q);
+      if (i === list.length - 1) html += "</tbody></table></div>";
+    });
+    if (undated.length && agFilter !== "past") html += '<h2 class="mo">Data a combinar</h2><div class="scroll"><table><tbody>' + undated.map(agRow).join("") + "</tbody></table></div>";
+    html += '<p style="color:var(--mut);font-size:13.5px;margin-top:12px">Inclui propostas aceitas (aguardando pagamento), palestras confirmadas e realizadas.</p>';
+    main.innerHTML = html;
+    $("agf").onchange = function () { agFilter = this.value; render(); };
+  }
+  function agRow(q) {
+    var f = fin(q), dt = q.event_date ? new Date(q.event_date + "T12:00:00Z") : null;
+    return "<tr><td>" + (dt ? '<div class="dt">' + dt.getUTCDate() + "<small>" + e(dt.toLocaleDateString("pt-BR", { weekday: "short", month: "short", timeZone: "UTC" })) + "</small></div>" : "A combinar") + "</td>" +
+      "<td><b>" + e(q.title) + '</b><div class="sub">' + (q.format === "online" ? "Online" : e([q.city, q.uf].filter(Boolean).join("/") || "Presencial")) + (q.audience ? " · " + q.audience + " pessoas" : "") + (q.duration_min ? " · " + q.duration_min + " min" : "") + "</div></td>" +
+      "<td>" + e(q.company_name) + '<div class="sub">' + e(q.speaker_name) + "</div></td>" +
+      "<td>" + (q.amount_cents ? brl(q.amount_cents) : "—") + (f.open ? '<div class="sub">falta ' + brl(f.open) + "</div>" : "") + "</td>" +
+      '<td><span class="pill ' + f.cls + '">' + e(f.label) + "</span></td></tr>";
+  }
   function screenQuotes() {
     var q = data.quotes;
     var html = '<div class="bar"><h1 class="grow">Pedidos de orçamento</h1></div><div class="stats">' +
@@ -287,6 +351,7 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     if (!q.length) html += '<div class="empty">Nenhum pedido ainda.</div>';
     else html += '<div class="scroll"><table><thead><tr><th>Evento</th><th>Empresa → palestrante</th><th class="hide">Data</th><th>Valor</th><th>Situação</th></tr></thead><tbody>' + q.map(function (r) {
       var st = QST[r.status] || [r.status, ""];
+      if (r.status === "paid" && r.deposit_cents) st = [fin(r).label, fin(r).cls];
       return "<tr><td><b>" + e(r.title) + '</b><div class="sub">Pedido em ' + d(r.created_at) + " · " + (r.format === "online" ? "online" : e([r.city, r.uf].filter(Boolean).join("/"))) + (r.audience ? " · " + r.audience + " pessoas" : "") + "</div></td>" +
         "<td>" + e(r.company_name) + '<div class="sub">para ' + e(r.speaker_name) + "</div></td>" +
         '<td class="hide">' + (r.event_date ? r.event_date.split("-").reverse().join("/") : "A combinar") + "</td>" +
@@ -302,24 +367,41 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     var sum = function (arr, k) { return arr.reduce(function (a, x) { return a + (x[k] || 0); }, 0); };
     var quotes = paid.filter(function (x) { return x.kind === "quote"; }), seals = paid.filter(function (x) { return x.kind === "verified"; });
     var pend = quotes.filter(function (x) { return !x.payout_done_at && !x.split; });
-    var html = '<div class="bar"><h1 class="grow">Pagamentos</h1><button class="ghost" id="exp">Baixar planilha</button></div><div class="stats">' +
-      '<div class="stat"><b>' + brl(sum(quotes, "amount_cents")) + "</b><span>Contratações pagas (" + quotes.length + ")</span></div>" +
-      '<div class="stat"><b>' + brl(sum(quotes, "commission_cents") + sum(seals, "amount_cents")) + "</b><span>Receita da plataforma (comissões + selos)</span></div>" +
+    var open = data.quotes.filter(function (q) { return q.status === "paid" && q.deposit_cents && !q.balance_paid_at; })
+      .sort(function (a, b) { return (a.balance_due_on || "") > (b.balance_due_on || "") ? 1 : -1; });
+    var late = open.filter(function (q) { return fin(q).late; });
+    var openSum = open.reduce(function (a, q) { return a + fin(q).open; }, 0), lateSum = late.reduce(function (a, q) { return a + fin(q).open; }, 0);
+    var mo = today().slice(0, 7), month = paid.filter(function (x) { return String(x.paid_at || "").slice(0, 7) === mo; });
+    var refunded = p.filter(function (x) { return x.refunded_at; });
+    var html = '<div class="bar"><h1 class="grow">Financeiro</h1><button class="ghost" id="exp">Baixar planilha</button></div><div class="stats">' +
+      '<div class="stat"><b>' + brl(sum(month, "amount_cents")) + "</b><span>Recebido este mês (" + month.length + " pagamento" + (month.length === 1 ? "" : "s") + ")</span></div>" +
+      '<div class="stat"><b>' + brl(sum(month.filter(function (x) { return x.kind === "quote"; }), "commission_cents") + sum(month.filter(function (x) { return x.kind === "verified"; }), "amount_cents")) + "</b><span>Receita da plataforma este mês</span></div>" +
+      '<div class="stat s-warn"><b>' + brl(openSum) + "</b><span>Saldos a receber (" + open.length + ")</span></div>" +
+      '<div class="stat ' + (late.length ? "s-err" : "") + '"><b>' + brl(lateSum) + "</b><span>Saldos atrasados (" + late.length + ")</span></div>" +
+      '<div class="stat"><b>' + brl(sum(quotes, "amount_cents")) + "</b><span>Contratações pagas desde o início (" + quotes.length + ")</span></div>" +
+      '<div class="stat"><b>' + brl(sum(quotes, "commission_cents") + sum(seals, "amount_cents")) + "</b><span>Receita da plataforma desde o início (comissões + selos)</span></div>" +
       '<div class="stat"><b>' + brl(sum(quotes, "payout_cents")) + "</b><span>Recebido pelos palestrantes" + (pend.length ? " (" + pend.length + " repasse manual pendente)" : "") + "</span></div>" +
-      '<div class="stat"><b>' + seals.length + "</b><span>Selos vendidos</span></div></div>";
+      '<div class="stat"><b>' + seals.length + "</b><span>Selos vendidos</span></div>" +
+      (refunded.length ? '<div class="stat"><b>' + brl(sum(refunded, "refunded_cents")) + "</b><span>Devolvido (" + refunded.length + ")</span></div>" : "") + "</div>";
+    html += '<h2 class="mo">Saldos a receber</h2>' + (open.length ? '<div class="scroll"><table><thead><tr><th>Vencimento</th><th>Evento</th><th>Empresa → palestrante</th><th>Sinal pago</th><th>Saldo</th><th>Situação</th></tr></thead><tbody>' + open.map(function (q) {
+      var f = fin(q), c = data.prof[q.company_id] || {};
+      return "<tr><td><b>" + ymd(q.balance_due_on) + '</b><div class="sub">evento ' + ymd(q.event_date) + "</div></td><td>" + e(q.title) + "</td><td>" + e(q.company_name) + '<div class="sub">' + e(c.email || "") + (c.phone ? " · " + e(c.phone) : "") + '</div><div class="sub">para ' + e(q.speaker_name) + "</div></td>" +
+        "<td>" + brl(q.deposit_cents) + "</td><td><b>" + brl(f.open) + '</b></td><td><span class="pill ' + f.cls + '">' + (f.late ? "Atrasado" : "Em dia") + "</span>" + (q.balance_reminders ? '<div class="sub">' + q.balance_reminders + " lembrete" + (q.balance_reminders > 1 ? "s" : "") + " enviado" + (q.balance_reminders > 1 ? "s" : "") + "</div>" : "") + "</td></tr>";
+    }).join("") + "</tbody></table></div>" : '<div class="empty">Nenhum saldo em aberto.</div>') + '<h2 class="mo">Movimentações</h2>';
     var show = p.filter(function (x) { return x.status !== "pending" || Date.now() - new Date(x.created_at) < 3 * 864e5; });
     if (!show.length) html += '<div class="empty">Nenhum pagamento ainda.</div>';
     else html += '<div class="scroll"><table><thead><tr><th>Descrição</th><th>Pagante</th><th>Valor</th><th class="hide">Comissão / palestrante</th><th>Situação</th><th>Repasse</th></tr></thead><tbody>' + show.map(function (x) {
       var st = PST[x.status] || [x.status, ""], sp = x.speaker_id && data.prof[x.speaker_id];
-      return "<tr><td><b>" + e(x.description || (x.kind === "verified" ? "Selo de verificado" : "Contratação")) + '</b><div class="sub">' + d(x.paid_at || x.created_at) + (x.mp_payment_id ? " · MP " + e(x.mp_payment_id) : "") + "</div></td>" +
+      return "<tr><td><b>" + e(x.description || (x.kind === "verified" ? "Selo de verificado" : "Contratação")) + "</b>" + (x.kind === "quote" ? ' <span class="pill">' + ({ deposit: "Sinal", balance: "Saldo" }[x.stage] || "Integral") + "</span>" : "") + '<div class="sub">' + d(x.paid_at || x.created_at) + (x.mp_payment_id ? " · MP " + e(x.mp_payment_id) : "") + (x.refunded_cents ? " · devolvido " + brl(x.refunded_cents) : "") + "</div></td>" +
         "<td>" + e(x.payer_name || "") + '<div class="sub">' + e(x.payer_email || "") + "</div></td><td>" + brl(x.amount_cents) + "</td>" +
         '<td class="hide">' + (x.kind === "quote" ? brl(x.commission_cents) + ' / <b>' + brl(x.payout_cents) + "</b>" + (sp ? '<div class="sub">para ' + e(sp.name) + (sp.phone ? " · " + e(sp.phone) : "") + "</div>" : "") : "—") + "</td>" +
         '<td><span class="pill ' + st[1] + '">' + st[0] + "</span></td><td>" +
         (x.kind === "quote" && x.status === "paid" ? (x.split ? '<span class="pill ok">Automático</span>' : x.payout_done_at ? '<span class="pill ok">Feito ' + d(x.payout_done_at) + '</span>' : '<button class="ok" data-pay="' + x.id + '" style="padding:6px 12px;font-size:13px">Marcar repasse feito</button>') : "—") +
-        (x.status === "paid" && x.mp_payment_id ? '<div style="margin-top:6px"><button class="bad" data-refund="' + x.id + '" style="padding:5px 10px;font-size:12.5px">Devolver</button></div>' : "") +
+        (x.status === "paid" && x.mp_payment_id && !x.refunded_at ? '<div class="acts" style="margin-top:6px"><button class="bad" data-refund="' + x.id + '" style="padding:5px 10px;font-size:12.5px">Devolver</button>' +
+          (x.stage === "deposit" ? '<button class="bad" data-refund="' + x.id + '" data-fee="1" style="padding:5px 10px;font-size:12.5px">Devolver −' + feePct() + "%</button>" : "") + "</div>" : "") +
         "</td></tr>";
     }).join("") + "</tbody></table></div>" +
-      '<p style="color:var(--mut);font-size:13.5px;margin-top:12px">Contratações caem direto na conta Mercado Pago do palestrante (Split); a comissão cai na conta da plataforma. O botão Devolver faz o reembolso integral pelo Mercado Pago.</p>';
+      '<p style="color:var(--mut);font-size:13.5px;margin-top:12px">Contratações caem direto na conta Mercado Pago do palestrante (Split); a comissão cai na conta da plataforma. Eventos a mais de 7 dias: sinal de 30% na confirmação e saldo até 7 dias antes, com lembretes automáticos à empresa. "Devolver" faz o reembolso integral; "Devolver −' + feePct() + '%" devolve o sinal menos a taxa de cancelamento (empresa cancelou com mais de 30 dias), que fica com o palestrante.</p>';
     main.innerHTML = html;
     main.querySelectorAll("[data-pay]").forEach(function (b) {
       b.onclick = function () {
@@ -333,12 +415,16 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
     });
     main.querySelectorAll("[data-refund]").forEach(function (b) {
       b.onclick = function () {
-        var x = data.payments.filter(function (y) { return y.id === b.getAttribute("data-refund"); })[0];
-        var txt = x.kind === "quote" ? "Devolve " + brl(x.amount_cents) + " à empresa pelo Mercado Pago e cancela o pedido. O valor sai da conta do palestrante e a comissão volta junto." : "Devolve " + brl(x.amount_cents) + " ao palestrante e tira o selo.";
-        ask("Devolver o pagamento?", txt, null, "Devolver").then(function (t) {
+        var x = data.payments.filter(function (y) { return y.id === b.getAttribute("data-refund"); })[0], fee = !!b.getAttribute("data-fee");
+        var back = fee ? x.amount_cents - Math.round(x.amount_cents * feePct() / 100) : x.amount_cents;
+        var txt = x.kind !== "quote" ? "Devolve " + brl(x.amount_cents) + " ao palestrante e tira o selo."
+          : fee ? "Devolve " + brl(back) + " à empresa e cancela o pedido. A taxa de " + brl(x.amount_cents - back) + " (" + feePct() + "% do sinal) fica com o palestrante."
+          : x.stage === "balance" ? "Devolve o saldo de " + brl(x.amount_cents) + " à empresa. O pedido volta a ficar com saldo em aberto; para cancelar a palestra, devolva também o sinal."
+          : "Devolve " + brl(x.amount_cents) + " à empresa pelo Mercado Pago e cancela o pedido. O valor sai da conta do palestrante e a comissão volta junto.";
+        ask(fee ? "Devolver com taxa de cancelamento?" : "Devolver o pagamento?", txt, null, "Devolver").then(function (t) {
           if (t === null) return;
           b.disabled = true;
-          api("/api/reembolso", { payment_id: x.id }).then(function () { toast("Pagamento devolvido."); refresh(); })
+          api("/api/reembolso", { payment_id: x.id, fee: fee }).then(function () { toast("Pagamento devolvido."); refresh(); })
             .catch(function (err) { b.disabled = false; toast(err.message); });
         });
       };
@@ -347,7 +433,8 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
       csv(data.payments, [["data", function (x) { return d(x.paid_at || x.created_at); }], ["tipo", function (x) { return x.kind === "verified" ? "selo" : "contratacao"; }], ["descricao", function (x) { return x.description; }],
         ["pagante", function (x) { return x.payer_name; }], ["email", function (x) { return x.payer_email; }], ["valor", function (x) { return (x.amount_cents / 100).toFixed(2).replace(".", ","); }],
         ["comissao", function (x) { return (x.commission_cents / 100).toFixed(2).replace(".", ","); }], ["repasse", function (x) { return (x.payout_cents / 100).toFixed(2).replace(".", ","); }],
-        ["situacao", function (x) { return x.status; }], ["repasse_feito_em", function (x) { return x.payout_done_at ? d(x.payout_done_at) : ""; }], ["id_mercado_pago", function (x) { return x.mp_payment_id; }]], "pagamentos-speakerconnect.csv");
+        ["etapa", function (x) { return x.kind === "quote" ? ({ deposit: "sinal", balance: "saldo" }[x.stage] || "integral") : ""; }],
+        ["situacao", function (x) { return x.status; }], ["devolvido", function (x) { return x.refunded_cents ? (x.refunded_cents / 100).toFixed(2).replace(".", ",") : ""; }], ["repasse_feito_em", function (x) { return x.payout_done_at ? d(x.payout_done_at) : ""; }], ["id_mercado_pago", function (x) { return x.mp_payment_id; }]], "pagamentos-speakerconnect.csv");
     };
   }
 
@@ -425,7 +512,7 @@ dialog textarea{width:100%;min-height:110px;margin:10px 0}
 
   function render() {
     document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-t") === tab); });
-    ({ palestrantes: screenSpeakers, pedidos: screenQuotes, pagamentos: screenPayments, empresas: screenCompanies, temas: screenThemes, alertas: screenAlerts })[tab]();
+    ({ palestrantes: screenSpeakers, pedidos: screenQuotes, agenda: screenAgenda, pagamentos: screenPayments, empresas: screenCompanies, temas: screenThemes, alertas: screenAlerts })[tab]();
   }
 
   function start(session) {

@@ -118,6 +118,12 @@ create table if not exists public.quotes (
 );
 create index if not exists quotes_company_idx on public.quotes (company_id, created_at desc);
 create index if not exists quotes_speaker_idx on public.quotes (speaker_id, created_at desc);
+-- Sinal e saldo: com o evento a 8 dias ou mais, a empresa paga um sinal para confirmar a data e o saldo até 7 dias antes.
+alter table public.quotes add column if not exists deposit_cents int check (deposit_cents is null or deposit_cents > 0);
+alter table public.quotes add column if not exists deposit_paid_at timestamptz;
+alter table public.quotes add column if not exists balance_due_on date;
+alter table public.quotes add column if not exists balance_paid_at timestamptz;
+alter table public.quotes add column if not exists balance_reminders smallint not null default 0;
 
 create table if not exists public.quote_messages (
   id         uuid primary key default gen_random_uuid(),
@@ -149,6 +155,10 @@ create table if not exists public.payments (
   created_at       timestamptz not null default now()
 );
 create index if not exists payments_user_idx on public.payments (user_id, created_at desc);
+-- full = pagamento integral; deposit = sinal; balance = saldo. refunded_cents: devolução parcial (cancelamento com taxa).
+alter table public.payments add column if not exists stage text not null default 'full' check (stage in ('full', 'deposit', 'balance'));
+alter table public.payments add column if not exists refunded_cents int not null default 0;
+create index if not exists payments_quote_idx on public.payments (quote_id, stage);
 
 -- ---------- novo usuário: cria o perfil sozinho ----------
 create or replace function private.handle_new_user() returns trigger
@@ -274,7 +284,9 @@ begin
       raise exception 'Este palestrante não está disponível.' using errcode = '23514';
     end if;
     if new.status <> 'requested' or new.amount_cents is not null or new.speaker_note is not null
-       or new.paid_at is not null or new.proposed_at is not null or new.accepted_at is not null then
+       or new.paid_at is not null or new.proposed_at is not null or new.accepted_at is not null
+       or new.deposit_cents is not null or new.deposit_paid_at is not null or new.balance_paid_at is not null
+       or new.balance_due_on is not null or coalesce(new.balance_reminders, 0) <> 0 then
       raise exception 'Pedido inválido.' using errcode = '42501';
     end if;
     new.created_at := now();
@@ -285,7 +297,10 @@ begin
   if private.is_backend() or public.is_admin() then return new; end if;
   if new.id <> old.id or new.company_id <> old.company_id or new.speaker_id <> old.speaker_id
      or new.company_name is distinct from old.company_name or new.speaker_name is distinct from old.speaker_name
-     or new.created_at <> old.created_at or new.paid_at is distinct from old.paid_at then
+     or new.created_at <> old.created_at or new.paid_at is distinct from old.paid_at
+     -- sinal e saldo: só o servidor grava
+     or (new.deposit_cents, new.deposit_paid_at, new.balance_paid_at, new.balance_due_on, new.balance_reminders)
+        is distinct from (old.deposit_cents, old.deposit_paid_at, old.balance_paid_at, old.balance_due_on, old.balance_reminders) then
     raise exception 'Você não pode alterar esse campo.' using errcode = '42501';
   end if;
 
@@ -330,7 +345,12 @@ begin
     end if;
     if new.status = 'accepted' and old.status = 'proposed' then new.accepted_at := now(); return new; end if;
     if new.status = 'cancelled' and old.status in ('requested', 'proposed', 'accepted') then return new; end if;
-    if new.status = 'done' and old.status = 'paid' then return new; end if;
+    if new.status = 'done' and old.status = 'paid' then
+      if old.deposit_cents is not null and old.balance_paid_at is null then
+        raise exception 'Pague o saldo antes de marcar a palestra como realizada.' using errcode = '23514';
+      end if;
+      return new;
+    end if;
     raise exception 'Mudança não permitida neste momento.' using errcode = '42501';
   end if;
 

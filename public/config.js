@@ -16,5 +16,9 @@ window.SC = {
   // A Secret Key NÃO vai aqui: ela fica no Supabase (Authentication > Attack Protection).
   turnstile: "0x4AAAAAAFtBdB9QtTL-OO2z",
   commissionPct: 20,
+  // Sinal e saldo (iguais a DEPOSIT_PCT, BALANCE_DAYS_BEFORE e CANCEL_FEE_PCT no Cloudflare).
+  depositPct: 30,
+  balanceDays: 7,
+  cancelFeePct: 10,
   verifiedPrice: "R$ 199,00 por ano"
 };

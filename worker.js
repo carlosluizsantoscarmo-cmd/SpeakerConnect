@@ -263,6 +263,36 @@ export function split(amountCents, pct) {
   const commission = Math.round((amountCents * p) / 100);
   return { commission, payout: amountCents - commission };
 }
+// ---------- sinal e saldo ----------
+// Evento a mais de BALANCE_DAYS_BEFORE dias: a empresa paga DEPOSIT_PCT% de sinal para confirmar a data
+// e o saldo até BALANCE_DAYS_BEFORE dias antes. Evento perto (ou sem data): pagamento integral, como antes.
+export const todaySP = (now = Date.now()) => new Date(now).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+export const addDays = (ymd, n) => new Date(Date.parse(ymd + "T12:00:00Z") + n * 864e5).toISOString().slice(0, 10);
+export const daysBetween = (a, b) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 864e5);
+export const fmtDate = (ymd) => (ymd ? String(ymd).slice(0, 10).split("-").reverse().join("/") : "");
+const numEnv = (v, d, max) => { const n = Number(v); return Number.isFinite(n) && n > 0 && n < max ? n : d; };
+export const depositPct = (env) => numEnv(env.DEPOSIT_PCT, 30, 100);
+export const balanceDays = (env) => Math.round(numEnv(env.BALANCE_DAYS_BEFORE, 7, 60));
+export const cancelFeePct = (env) => numEnv(env.CANCEL_FEE_PCT, 10, 100);
+
+// O que a empresa paga agora por este pedido: { stage: "full"|"deposit"|"balance", cents, due? } ou null.
+export function chargePlan(env, q, now = Date.now()) {
+  if (!q || !(q.amount_cents > 0)) return null;
+  if (q.status === "accepted") {
+    const days = balanceDays(env);
+    const ev = q.event_date ? String(q.event_date).slice(0, 10) : null;
+    if (ev && daysBetween(todaySP(now), ev) > days) {
+      const cents = Math.round((q.amount_cents * depositPct(env)) / 100);
+      if (cents >= 100 && q.amount_cents - cents >= 100) return { stage: "deposit", cents, due: addDays(ev, -days) };
+    }
+    return { stage: "full", cents: q.amount_cents };
+  }
+  if (q.status === "paid" && q.deposit_cents > 0 && !q.balance_paid_at) {
+    return { stage: "balance", cents: q.amount_cents - q.deposit_cents, due: q.balance_due_on || null };
+  }
+  return null;
+}
+
 const MOTIVOS = {
   cc_rejected_insufficient_amount: "Limite insuficiente no cartão.",
   cc_rejected_bad_filled_card_number: "Confira o número do cartão.",
@@ -290,17 +320,21 @@ async function resolveCharge(env, me, b) {
       title: `Selo de palestrante verificado - ${BRAND}`, match: `kind=eq.verified&user_id=eq.${me.id}`, row: { speaker_id: me.id } };
   }
   if (!UUID.test(String(b.quote_id || ""))) return { error: [400, "Pedido inválido."] };
-  const q = await one(env, `/rest/v1/quotes?id=eq.${b.quote_id}&select=id,company_id,speaker_id,title,status,amount_cents,speaker_name`);
+  const q = await one(env, `/rest/v1/quotes?id=eq.${b.quote_id}&select=id,company_id,speaker_id,title,status,amount_cents,speaker_name,event_date,deposit_cents,balance_due_on,balance_paid_at`);
   if (!q || q.company_id !== me.id) return { error: [404, "Pedido não encontrado."] };
-  if (q.status === "paid" || q.status === "done") return { error: [400, "Este pedido já foi pago."] };
-  if (q.status !== "accepted" || !(q.amount_cents > 0)) return { error: [400, "Aceite a proposta antes de pagar."] };
+  const plan = chargePlan(env, q);
+  if (!plan) {
+    if (q.status === "paid" || q.status === "done") return { error: [400, "Este pedido já foi pago."] };
+    return { error: [400, "Aceite a proposta antes de pagar."] };
+  }
   const token = await sellerToken(env, q.speaker_id);
   if (!token) return { error: [409, "O palestrante ainda não conectou a conta do Mercado Pago para receber. Avisamos a equipe; tente de novo mais tarde."], code: "speaker_not_connected" };
   const acc = await one(env, `/rest/v1/speaker_mp_accounts?speaker_id=eq.${q.speaker_id}&select=mp_user_id,public_key`);
-  const { commission, payout } = split(q.amount_cents, env.COMMISSION_PCT);
-  return { kind: "quote", cents: q.amount_cents, fee: commission, payout, token, publicKey: (acc && acc.public_key) || env.MP_PUBLIC_KEY, split: true,
-    title: `Palestra: ${line(q.title, 60)} - ${line(q.speaker_name, 40)}`, match: `kind=eq.quote&quote_id=eq.${q.id}`,
-    row: { quote_id: q.id, speaker_id: q.speaker_id, mp_seller_id: acc ? acc.mp_user_id : null } };
+  const { commission, payout } = split(plan.cents, env.COMMISSION_PCT);
+  const prefix = plan.stage === "deposit" ? "Sinal da palestra" : plan.stage === "balance" ? "Saldo da palestra" : "Palestra";
+  return { kind: "quote", cents: plan.cents, fee: commission, payout, token, publicKey: (acc && acc.public_key) || env.MP_PUBLIC_KEY, split: true, stage: plan.stage,
+    title: `${prefix}: ${line(q.title, 50)} - ${line(q.speaker_name, 40)}`, match: `kind=eq.quote&quote_id=eq.${q.id}&stage=eq.${plan.stage}`,
+    row: { quote_id: q.id, speaker_id: q.speaker_id, mp_seller_id: acc ? acc.mp_user_id : null, stage: plan.stage } };
 }
 
 // GET /api/mp/config?quote_id=...  chave pública para o formulário do cartão (a do palestrante, quando é contratação)
@@ -312,7 +346,7 @@ async function mpConfigGet({ request, env }) {
   const c = await resolveCharge(env, me, qid ? { kind: "quote", quote_id: qid } : { kind: "verified" });
   if (c.error) return json(c.error[0], { error: c.error[1], code: c.code });
   if (!c.publicKey) return json(503, { error: "Pagamento por cartão ainda não está disponível. Use o Pix." });
-  return json(200, { public_key: c.publicKey, amount_cents: c.cents });
+  return json(200, { public_key: c.publicKey, amount_cents: c.cents, stage: c.stage || null });
 }
 
 // POST /api/mp/pagar  { kind: "quote"|"verified", quote_id?, method: "pix"|"card", token?, installments?, payment_method_id?, issuer_id?, identification?, device_id? }
@@ -399,6 +433,8 @@ export async function applyPayment(env, request, mp, ctx) {
   const pay = await one(env, `/rest/v1/payments?id=eq.${ref}&select=*`);
   if (!pay) return { reason: "pagamento-desconhecido" };
 
+  // Devolvido em parte (cancelamento com taxa): o Mercado Pago continua "approved"; não confirmar de novo.
+  if (pay.refunded_at && mp.status === "approved") return { reason: "ja-devolvido", status: pay.status };
   const patch = { mp_payment_id: String(mp.id) };
   let firstTime = false;
   if (mp.status === "approved") {
@@ -419,8 +455,11 @@ export async function applyPayment(env, request, mp, ctx) {
   }
   await sb(env, `/rest/v1/payments?id=eq.${pay.id}`, { method: "PATCH", body: patch });
   const status = patch.status || pay.status;
-  if (pay.kind === "quote" && pay.quote_id && (patch.status === "refunded" || patch.status === "charged_back") && pay.status !== patch.status) {
+  if (pay.kind === "quote" && pay.quote_id && pay.stage !== "balance" && (patch.status === "refunded" || patch.status === "charged_back") && pay.status !== patch.status) {
     await sb(env, `/rest/v1/quotes?id=eq.${pay.quote_id}`, { method: "PATCH", body: { status: "cancelled" } });
+  }
+  if (pay.kind === "quote" && pay.quote_id && pay.stage === "balance" && (patch.status === "refunded" || patch.status === "charged_back") && pay.status !== patch.status) {
+    await sb(env, `/rest/v1/quotes?id=eq.${pay.quote_id}`, { method: "PATCH", body: { balance_paid_at: null } });
   }
 
   if (firstTime) {
@@ -439,28 +478,61 @@ export async function applyPayment(env, request, mp, ctx) {
         text: `Olá, ${first(pay.payer_name)}!\n\nRecebemos o pagamento de ${brl(pay.amount_cents)}. O selo de palestrante verificado já aparece no seu perfil.` +
               `\n\nVocê tem 7 dias para desistir e pedir o reembolso integral, respondendo este e-mail.` + footer(env, request) }));
     }
-    if (pay.kind === "quote" && pay.quote_id) {
-      await sb(env, `/rest/v1/quotes?id=eq.${pay.quote_id}`, { method: "PATCH", body: { status: "paid", paid_at: patch.paid_at } });
-      const q = await one(env, `/rest/v1/quotes?id=eq.${pay.quote_id}&select=title,event_date,company_name,speaker_name,speaker_id`);
-      const sp = q && (await one(env, `/rest/v1/profiles?id=eq.${q.speaker_id}&select=name,email`));
-      const titulo = q ? line(q.title, 120) : pay.description;
-      later(ctx, sendMail(env, { to: env.NOTIFY_EMAIL, subject: `Contratação paga: ${brl(pay.amount_cents)} - ${titulo}`,
-        text: `Evento: ${titulo}\nEmpresa: ${q && q.company_name} (${pay.payer_email})\nPalestrante: ${q && q.speaker_name}\n` +
-              `Valor pago: ${brl(pay.amount_cents)}\nComissão da plataforma: ${brl(pay.commission_cents)}\nPalestrante recebe: ${brl(pay.payout_cents)}` +
-              (pay.split ? " (direto na conta Mercado Pago dele)" : "") + `\nPagamento no Mercado Pago: ${mp.id}` +
-              (pay.split ? "" : `\n\nQuando fizer o repasse, marque em ${siteUrl(env, request)}/equipe/ > Pagamentos.`) }));
-      later(ctx, sendMail(env, { to: pay.payer_email, subject: `Pagamento confirmado: ${titulo}`,
-        text: `Olá, ${first(pay.payer_name)}!\n\nRecebemos o pagamento de ${brl(pay.amount_cents)} pela palestra "${titulo}" com ${q && q.speaker_name}.` +
-              `\nO contato direto do palestrante já está liberado no app, na página do pedido.` + footer(env, request) }));
-      if (sp) later(ctx, sendMail(env, { to: sp.email, subject: `Palestra confirmada: ${titulo}`,
-        text: `Olá, ${first(sp.name)}!\n\n${q.company_name} pagou a palestra "${titulo}"${q.event_date ? " (" + q.event_date.split("-").reverse().join("/") + ")" : ""}.` +
-              (pay.split
-                ? `\nVocê recebe ${brl(pay.payout_cents)} (valor da proposta menos a comissão da plataforma) direto na sua conta do Mercado Pago, no prazo de liberação da sua conta.`
-                : `\nValor do seu repasse: ${brl(pay.payout_cents)} (valor da proposta menos a comissão da plataforma).`) +
-              `\nO contato da empresa já está liberado no app, na página do pedido.` + footer(env, request) }));
-    }
+    if (pay.kind === "quote" && pay.quote_id) await quotePaid(env, request, ctx, pay, mp, patch.paid_at);
   }
   return { reason: "ok:" + status, status };
+}
+
+// Pagamento de contratação confirmado: atualiza o pedido e avisa empresa, palestrante e equipe.
+async function quotePaid(env, request, ctx, pay, mp, paidAt) {
+  const stage = pay.stage || "full";
+  const q0 = await one(env, `/rest/v1/quotes?id=eq.${pay.quote_id}&select=event_date,amount_cents`);
+  const ev = q0 && q0.event_date ? String(q0.event_date).slice(0, 10) : null;
+  const qpatch = stage === "deposit"
+    ? { status: "paid", paid_at: paidAt, deposit_cents: pay.amount_cents, deposit_paid_at: paidAt, balance_due_on: ev ? addDays(ev, -balanceDays(env)) : null }
+    : stage === "balance" ? { balance_paid_at: paidAt } : { status: "paid", paid_at: paidAt };
+  await sb(env, `/rest/v1/quotes?id=eq.${pay.quote_id}`, { method: "PATCH", body: qpatch });
+  const q = await one(env, `/rest/v1/quotes?id=eq.${pay.quote_id}&select=title,event_date,company_name,speaker_name,speaker_id,amount_cents,deposit_cents,balance_due_on`);
+  const sp = q && (await one(env, `/rest/v1/profiles?id=eq.${q.speaker_id}&select=name,email`));
+  const titulo = q ? line(q.title, 120) : pay.description;
+  const quando = q && q.event_date ? " (" + fmtDate(q.event_date) + ")" : "";
+  const saldo = q && q.deposit_cents ? q.amount_cents - q.deposit_cents : 0;
+  const link = `${siteUrl(env, request)}/app/#/pedido?id=${pay.quote_id}`;
+  const foot = footer(env, request);
+  const nome = { deposit: "Sinal", balance: "Saldo", full: "Contratação" }[stage];
+  later(ctx, sendMail(env, { to: env.NOTIFY_EMAIL, subject: `${nome} pago: ${brl(pay.amount_cents)} - ${titulo}`,
+    text: `Evento: ${titulo}${quando}\nEmpresa: ${q && q.company_name} (${pay.payer_email})\nPalestrante: ${q && q.speaker_name}\n` +
+          `${nome} pago: ${brl(pay.amount_cents)}\nComissão da plataforma: ${brl(pay.commission_cents)}\nPalestrante recebe: ${brl(pay.payout_cents)}` +
+          (pay.split ? " (direto na conta Mercado Pago dele)" : "") + `\nPagamento no Mercado Pago: ${mp.id}` +
+          (stage === "deposit" ? `\n\nSaldo de ${brl(saldo)} vence em ${fmtDate(q && q.balance_due_on)}. Acompanhe em ${siteUrl(env, request)}/equipe/ > Financeiro.` : "") +
+          (pay.split ? "" : `\n\nQuando fizer o repasse, marque em ${siteUrl(env, request)}/equipe/ > Financeiro.`) }));
+  const toCompany = stage === "deposit"
+    ? { subject: `Data confirmada: ${titulo}`,
+        text: `Olá, ${first(pay.payer_name)}!\n\nRecebemos o sinal de ${brl(pay.amount_cents)} pela palestra "${titulo}"${quando} com ${q && q.speaker_name}. A data está garantida!` +
+              `\n\nSaldo: ${brl(saldo)}, até ${fmtDate(q && q.balance_due_on)}. Avisamos você por e-mail antes do vencimento, e o pagamento é pelo app: ${link}` +
+              `\n\nO contato direto do palestrante já está liberado no app, na página do pedido.` + foot }
+    : stage === "balance"
+    ? { subject: `Pagamento concluído: ${titulo}`,
+        text: `Olá, ${first(pay.payer_name)}!\n\nRecebemos o saldo de ${brl(pay.amount_cents)} pela palestra "${titulo}"${quando}. O pagamento está quitado. Bom evento!` + foot }
+    : { subject: `Pagamento confirmado: ${titulo}`,
+        text: `Olá, ${first(pay.payer_name)}!\n\nRecebemos o pagamento de ${brl(pay.amount_cents)} pela palestra "${titulo}" com ${q && q.speaker_name}.` +
+              `\nO contato direto do palestrante já está liberado no app, na página do pedido.` + foot };
+  later(ctx, sendMail(env, { to: pay.payer_email, ...toCompany }));
+  if (!sp) return;
+  const recebe = pay.split
+    ? `Você recebe ${brl(pay.payout_cents)} (já descontada a comissão da plataforma) direto na sua conta do Mercado Pago, no prazo de liberação da sua conta.`
+    : `Valor do seu repasse: ${brl(pay.payout_cents)} (já descontada a comissão da plataforma).`;
+  const toSpeaker = stage === "deposit"
+    ? { subject: `Palestra confirmada: ${titulo}`,
+        text: `Olá, ${first(sp.name)}!\n\n${q.company_name} pagou o sinal da palestra "${titulo}"${quando}. A data está confirmada!\n${recebe}` +
+              `\n\nO saldo de ${brl(saldo)} vence em ${fmtDate(q.balance_due_on)}, e avisamos você quando for pago.` +
+              `\nO contato da empresa já está liberado no app, na página do pedido.` + foot }
+    : stage === "balance"
+    ? { subject: `Saldo pago: ${titulo}`, text: `Olá, ${first(sp.name)}!\n\n${q.company_name} pagou o saldo da palestra "${titulo}"${quando}. O contrato está quitado.\n${recebe}` + foot }
+    : { subject: `Palestra confirmada: ${titulo}`,
+        text: `Olá, ${first(sp.name)}!\n\n${q.company_name} pagou a palestra "${titulo}"${quando}.\n${recebe}` +
+              `\nO contato da empresa já está liberado no app, na página do pedido.` + foot };
+  later(ctx, sendMail(env, { to: sp.email, ...toSpeaker }));
 }
 
 async function mpWebhook({ request, env, ctx }) {
@@ -620,21 +692,25 @@ async function reembolsoPost({ request, env }) {
   if (!b || !UUID.test(String(b.payment_id || ""))) return json(400, { error: "Pagamento inválido." });
   const pay = await one(env, `/rest/v1/payments?id=eq.${b.payment_id}&select=*`);
   if (!pay || !pay.mp_payment_id) return json(404, { error: "Pagamento não encontrado." });
-  if (pay.status !== "paid") return json(400, { error: "Só pagamentos confirmados podem ser devolvidos." });
+  if (pay.status !== "paid" || pay.refunded_at) return json(400, { error: "Só pagamentos confirmados podem ser devolvidos." });
+  // Taxa de cancelamento (empresa cancelou com antecedência): devolve o sinal menos CANCEL_FEE_PCT%, que fica com o palestrante.
+  const withFee = !!b.fee && pay.kind === "quote" && pay.stage === "deposit";
+  const refund = withFee ? pay.amount_cents - Math.round((pay.amount_cents * cancelFeePct(env)) / 100) : pay.amount_cents;
   const token = await tokenForPayment(env, pay);
   if (!token) return json(409, { error: "A conta do palestrante não está mais conectada. Faça a devolução pelo painel do Mercado Pago." });
   const r = await fetch(`${MP_API}/v1/payments/${encodeURIComponent(pay.mp_payment_id)}/refunds`, {
-    method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json", "X-Idempotency-Key": "sc-refund-" + pay.id }, body: "{}",
+    method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json", "X-Idempotency-Key": "sc-refund-" + pay.id + (withFee ? "-taxa" : "") },
+    body: withFee ? JSON.stringify({ amount: refund / 100 }) : "{}",
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({}));
     console.error("reembolso recusado:", r.status, JSON.stringify(d).slice(0, 200));
     return json(502, { error: "O Mercado Pago recusou a devolução" + (d && d.message ? ": " + line(d.message, 120) : ".") });
   }
-  await sb(env, `/rest/v1/payments?id=eq.${pay.id}`, { method: "PATCH", body: { status: "refunded", refunded_at: new Date().toISOString() } });
-  if (pay.kind === "quote" && pay.quote_id) await sb(env, `/rest/v1/quotes?id=eq.${pay.quote_id}`, { method: "PATCH", body: { status: "cancelled" } });
+  await sb(env, `/rest/v1/payments?id=eq.${pay.id}`, { method: "PATCH", body: { status: "refunded", refunded_at: new Date().toISOString(), refunded_cents: refund } });
+  if (pay.kind === "quote" && pay.quote_id) await sb(env, `/rest/v1/quotes?id=eq.${pay.quote_id}`, { method: "PATCH", body: pay.stage === "balance" ? { balance_paid_at: null } : { status: "cancelled" } });
   if (pay.kind === "verified" && pay.speaker_id) await sb(env, `/rest/v1/speakers?id=eq.${pay.speaker_id}`, { method: "PATCH", body: { verified_until: null } });
-  return json(200, { ok: true });
+  return json(200, { ok: true, refunded_cents: refund });
 }
 
 // ---------- DELETE /api/conta ----------
@@ -809,6 +885,63 @@ export async function profileReminders(env, now = Date.now()) {
   return sent;
 }
 
+// ---------- lembrete do saldo (sinal pago, saldo em aberto) ----------
+// Etapa 0: 7 dias antes do vencimento. Etapa 1: 1 dia antes. Etapa 2: vencido (avisa também palestrante e equipe). Depois, para.
+export function balanceStep(q, today) {
+  if (!q.balance_due_on) return null;
+  const left = daysBetween(today, String(q.balance_due_on).slice(0, 10));
+  const n = Number(q.balance_reminders) || 0;
+  if (n === 0 && left <= 7 && left >= 0) return left <= 1 ? 1 : 0;
+  if (n <= 1 && left <= 1 && left >= 0) return 1;
+  if (n <= 2 && left < 0) return 2;
+  return null;
+}
+
+export function balanceMails(env, q, c, s, step) {
+  const site = siteBase(env), link = `${site}/app/#/pedido?id=${q.id}`;
+  const saldo = brl(q.amount_cents - q.deposit_cents), venc = fmtDate(q.balance_due_on), ev = q.event_date ? fmtDate(q.event_date) : "a combinar";
+  const titulo = line(q.title, 120);
+  const foot = `\n\nAbrir o ${BRAND}: ${site}/app/\n\nVocê recebe este e-mail porque tem cadastro no ${BRAND}.`;
+  const out = [];
+  if (step < 2) {
+    if (c) out.push({ to: c.email, subject: step === 0 ? `Saldo da palestra vence em ${venc}` : `O saldo da palestra vence ${daysBetween(todaySP(), String(q.balance_due_on).slice(0, 10)) === 0 ? "hoje" : "amanhã"}`,
+      text: `Olá, ${first(c.name)}!\n\nLembrete: o saldo de ${saldo} da palestra "${titulo}" com ${line(q.speaker_name, 80)} (evento em ${ev}) vence em ${venc}.` +
+            `\n\nPague por Pix ou cartão pelo app: ${link}` + foot });
+    return out;
+  }
+  if (c) out.push({ to: c.email, subject: `Saldo em atraso: ${line(q.title, 80)}`,
+    text: `Olá, ${first(c.name)}!\n\nO saldo de ${saldo} da palestra "${titulo}" (evento em ${ev}) venceu em ${venc} e ainda não foi pago.` +
+          `\n\nPara manter a palestra confirmada, pague pelo app: ${link}\n\nSe houve algum problema, responda este e-mail.` + foot });
+  if (s) out.push({ to: s.email, subject: `Saldo ainda não pago: ${line(q.title, 80)}`,
+    text: `Olá, ${first(s.name)}!\n\n${line(q.company_name, 80)} ainda não pagou o saldo de ${saldo} da palestra "${titulo}" (evento em ${ev}), que venceu em ${venc}.` +
+          `\nJá cobramos a empresa e a equipe está acompanhando. Avisamos você assim que for pago.` + foot });
+  out.push({ to: env.NOTIFY_EMAIL, subject: `Saldo atrasado: ${line(q.title, 60)} - ${saldo}`,
+    text: `Empresa: ${q.company_name} (${c ? c.email : "?"})\nPalestrante: ${q.speaker_name}\nEvento: ${ev}\nSaldo: ${saldo}, venceu em ${venc}.\n\nVeja em ${site}/equipe/ > Financeiro.` });
+  return out;
+}
+
+export async function balanceReminders(env, now = Date.now()) {
+  if (!configured(env) || !env.RESEND_API_KEY) return 0;
+  const today = todaySP(now);
+  const rows = await sb(env, `/rest/v1/quotes?status=eq.paid&deposit_cents=not.is.null&balance_paid_at=is.null&balance_reminders=lt.3&select=id,title,company_id,speaker_id,company_name,speaker_name,event_date,amount_cents,deposit_cents,balance_due_on,balance_reminders&limit=300`);
+  let sent = 0;
+  for (const q of Array.isArray(rows) ? rows : []) {
+    const step = balanceStep(q, today);
+    if (step === null) continue;
+    try {
+      const upd = await sb(env, `/rest/v1/quotes?id=eq.${q.id}&balance_reminders=eq.${Number(q.balance_reminders) || 0}&balance_paid_at=is.null`, {
+        method: "PATCH", body: { balance_reminders: step + 1 }, prefer: "return=representation" });
+      if (!Array.isArray(upd) || !upd.length) continue;
+    } catch (e) { console.error("saldo: não consegui marcar", q.id, e && e.message); continue; }
+    const [c, s] = await Promise.all([
+      one(env, `/rest/v1/profiles?id=eq.${q.company_id}&select=name,email`),
+      one(env, `/rest/v1/profiles?id=eq.${q.speaker_id}&select=name,email`),
+    ]);
+    for (const m of balanceMails(env, q, c, s, step)) if (m.to && (await sendMail(env, m))) sent++;
+  }
+  return sent;
+}
+
 // ---------- roteador ----------
 const routes = {
   "/api/mp/config": { GET: mpConfigGet },
@@ -841,7 +974,11 @@ export default {
   },
   // Agendador do Cloudflare (ver "triggers" no wrangler.jsonc): lembretes diários de perfil incompleto.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(profileReminders(env).then((n) => console.log("lembretes de perfil enviados:", n))
-      .catch((e) => console.error("lembretes de perfil falharam:", e && e.message)));
+    ctx.waitUntil(Promise.all([
+      profileReminders(env).then((n) => console.log("lembretes de perfil enviados:", n))
+        .catch((e) => console.error("lembretes de perfil falharam:", e && e.message)),
+      balanceReminders(env).then((n) => console.log("lembretes de saldo enviados:", n))
+        .catch((e) => console.error("lembretes de saldo falharam:", e && e.message)),
+    ]));
   },
 };

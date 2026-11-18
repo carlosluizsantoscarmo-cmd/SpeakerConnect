@@ -17,6 +17,10 @@
     "ALLOWED_ORIGINS": "https://speakerconnect.com.br,https://www.speakerconnect.com.br,https://speakerconnect.carlosluiz-santoscarmo.workers.dev",
     // Comissão da plataforma sobre cada contratação (%).
     "COMMISSION_PCT": "20",
+    // Sinal e saldo: % do sinal, dias antes do evento para pagar o saldo e taxa de cancelamento (% do sinal).
+    "DEPOSIT_PCT": "30",
+    "BALANCE_DAYS_BEFORE": "7",
+    "CANCEL_FEE_PCT": "10",
     // Selo de verificado: preço em centavos (19900 = R$ 199,00) e validade em dias (365 = anual; 0 = para sempre).
     "VERIFIED_PRICE_CENTS": "19900",
     "VERIFIED_DAYS": "365",

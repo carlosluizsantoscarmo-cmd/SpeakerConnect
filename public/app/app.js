@@ -5,7 +5,7 @@
   "use strict";
   var C = window.SC || {};
   var app = document.getElementById("app");
-  var TERMS = "2026-10-v1", SPEAKER_TERMS = "2026-10-v1";
+  var TERMS = "2026-11-v2", SPEAKER_TERMS = "2026-11-v2";
   var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false, mpConn = null, myDoc = null, payActive = false, payTimer = null;
 
   // ---------- utilidades ----------
@@ -105,7 +105,32 @@
     paid: ["Contratado", "ok"], done: ["Realizado", "ok"], declined: ["Recusado", "err"], cancelled: ["Cancelado", "err"]
   };
   var QS_SPEAKER = { requested: ["Responder", "warn"], proposed: ["Proposta enviada", ""] };
-  function pill(st, asSpeaker) { var m = (asSpeaker && QS_SPEAKER[st]) || QS[st] || [st, ""]; return '<span class="pill ' + m[1] + '">' + e(m[0]) + "</span>"; }
+  function pill(st, asSpeaker, q) {
+    var m = (asSpeaker && QS_SPEAKER[st]) || QS[st] || [st, ""];
+    if (st === "paid" && q && q.deposit_cents && !q.balance_paid_at) m = ["Sinal pago", "ok"];
+    return '<span class="pill ' + m[1] + '">' + e(m[0]) + "</span>";
+  }
+
+  // ---------- sinal e saldo (a mesma regra do servidor; o valor cobrado de verdade vem sempre do servidor) ----------
+  function todaySP() { return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
+  function addDays(ymd, n) { return new Date(Date.parse(ymd + "T12:00:00Z") + n * 864e5).toISOString().slice(0, 10); }
+  function daysBetween(a, b) { return Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 864e5); }
+  function ymdBr(ymd) { return ymd ? String(ymd).slice(0, 10).split("-").reverse().join("/") : ""; }
+  function depPct() { var n = Number(C.depositPct); return n > 0 && n < 100 ? n : 30; }
+  function balDays() { var n = Number(C.balanceDays); return n > 0 && n < 60 ? Math.round(n) : 7; }
+  function chargePlan(q) {
+    if (!q || !(q.amount_cents > 0)) return null;
+    if (q.status === "accepted") {
+      var ev = q.event_date ? String(q.event_date).slice(0, 10) : null;
+      if (ev && daysBetween(todaySP(), ev) > balDays()) {
+        var c = Math.round(q.amount_cents * depPct() / 100);
+        if (c >= 100 && q.amount_cents - c >= 100) return { stage: "deposit", cents: c, due: addDays(ev, -balDays()) };
+      }
+      return { stage: "full", cents: q.amount_cents };
+    }
+    if (q.status === "paid" && q.deposit_cents > 0 && !q.balance_paid_at) return { stage: "balance", cents: q.amount_cents - q.deposit_cents, due: q.balance_due_on };
+    return null;
+  }
 
   // ---------- molduras ----------
   function shell(inner, tab, head) {
@@ -287,7 +312,7 @@
     var sp = profile.role === "speaker";
     return '<a class="item" href="#/pedido?id=' + e(q.id) + '">' + avatar(sp ? q.company_name : q.speaker_name) +
       '<div class="grow"><h3>' + e(q.title) + '</h3><div class="sub">' + e(sp ? q.company_name : q.speaker_name) + " · " + e(date(q.event_date)) + "</div>" +
-      '<div style="margin-top:6px">' + pill(q.status, sp) + (q.amount_cents ? ' <span class="small muted">' + brl(q.amount_cents) + "</span>" : "") + "</div></div></a>";
+      '<div style="margin-top:6px">' + pill(q.status, sp, q) + (q.amount_cents ? ' <span class="small muted">' + brl(q.amount_cents) + "</span>" : "") + "</div></div></a>";
   }
 
   // ---------- início ----------
@@ -466,8 +491,8 @@
         var list = todo.length ? todo : qs.slice(0, 5);
         html += list.length ? '<div class="list">' + list.map(quoteItem).join("") + "</div>" : '<div class="card empty"><h3>Nenhum pedido ainda</h3><p class="small">Quando uma empresa pedir orçamento, ele aparece aqui e chega no seu e-mail.</p></div>';
       } else {
-        var pay = qs.filter(function (q) { return q.status === "accepted"; });
-        if (pay.length) html += '<div class="card dark"><h3>Falta pagar</h3><p class="muted small" style="margin:4px 0 12px">' + e(pay[0].title) + " com " + e(pay[0].speaker_name) + '</p><a class="btn spot slim" href="#/pedido?id=' + e(pay[0].id) + '">Ver e pagar</a></div>';
+        var pay = qs.filter(function (q) { var pl = chargePlan(q); return q.status === "accepted" || (pl && pl.stage === "balance" && pl.due && daysBetween(todaySP(), String(pl.due).slice(0, 10)) <= 10); });
+        if (pay.length) html += '<div class="card dark"><h3>' + (pay[0].status === "paid" ? "Saldo a pagar" : "Falta pagar") + '</h3><p class="muted small" style="margin:4px 0 12px">' + e(pay[0].title) + " com " + e(pay[0].speaker_name) + '</p><a class="btn spot slim" href="#/pedido?id=' + e(pay[0].id) + '">Ver e pagar</a></div>';
         html += "<h2>Seus pedidos em andamento</h2>";
         html += open.length ? '<div class="list">' + open.map(quoteItem).join("") + "</div>" :
           '<div class="card empty"><h3>Nenhum pedido em andamento</h3><p class="small">Escolha um palestrante no site e toque em <b>Pedir orçamento</b>.</p><a class="btn slim" href="/#palestrantes">Ver palestrantes</a></div>';
@@ -576,7 +601,7 @@
       if (!Q) { shell('<div class="card empty"><h3>Pedido não encontrado</h3></div>', "pedidos", head); return; }
       var other = sp ? Q.company_name : Q.speaker_name;
       var pct = Number(C.commissionPct) || 0;
-      var html = '<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><h3 style="font-size:19px">' + e(Q.title) + '</h3><p class="muted small" style="margin:0">' + (sp ? "Empresa: " : "Palestrante: ") + e(other) + "</p></div>" + pill(Q.status, sp) + "</div>" +
+      var html = '<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><h3 style="font-size:19px">' + e(Q.title) + '</h3><p class="muted small" style="margin:0">' + (sp ? "Empresa: " : "Palestrante: ") + e(other) + "</p></div>" + pill(Q.status, sp, Q) + "</div>" +
         '<dl class="kv" style="margin-top:14px"><dt>Data</dt><dd>' + e(date(Q.event_date)) + "</dd><dt>Formato</dt><dd>" + (Q.format === "online" ? "Online" : "Presencial" + (Q.city ? " em " + e(Q.city) + (Q.uf ? "/" + e(Q.uf) : "") : "")) + "</dd>" +
         (Q.audience ? "<dt>Público</dt><dd>" + e(Q.audience) + " pessoas</dd>" : "") + (Q.duration_min ? "<dt>Duração</dt><dd>" + (Q.duration_min >= 60 ? (Q.duration_min / 60).toString().replace(".", ",") + " h" : Q.duration_min + " min") + "</dd>" : "") + "</dl>" +
         (Q.message ? '<p class="small" style="margin:12px 0 0;white-space:pre-wrap">' + e(Q.message) + "</p>" : "") + "</div>";
@@ -588,7 +613,7 @@
         if (sp && pct) {
           var com = Math.round(Q.amount_cents * pct / 100);
           html += '<div class="split"><span class="muted">Comissão da plataforma (' + pct + '%)</span><span>− ' + brl(com) + '</span><span class="tot">Você recebe</span><span class="tot">' + brl(Q.amount_cents - com) + "</span></div>" +
-            '<p class="hint" style="margin-top:8px">Direto na sua conta do Mercado Pago, quando a empresa pagar.</p>';
+            '<p class="hint" style="margin-top:8px">Direto na sua conta do Mercado Pago, quando a empresa pagar. Para eventos a mais de ' + balDays() + ' dias, a empresa paga ' + depPct() + '% de sinal para confirmar a data e o restante até ' + balDays() + ' dias antes.</p>';
         }
         html += "</div>";
       } else if (Q.status === "declined" && Q.speaker_note) {
@@ -607,10 +632,20 @@
           '<button class="full danger" type="button" id="pdecl">Não posso atender</button></form>';
       }
       if (!sp && Q.status === "proposed") html += '<button class="full" id="acc" type="button">Aceitar proposta de ' + brl(Q.amount_cents) + "</button>";
-      if (!sp && Q.status === "accepted") html += '<div class="card"><h3>Pagamento</h3><p class="price">' + brl(Q.amount_cents) + '</p><p class="muted small" style="margin:4px 0 8px">Pague por Pix ou cartão aqui mesmo. O valor vai para o palestrante pelo Mercado Pago, e o contato dele é liberado assim que o pagamento for confirmado.</p><div id="paybox"></div></div>';
-      if (sp && Q.status === "accepted") html += '<div class="card"><h3>Aguardando o pagamento da empresa</h3><p class="muted small" style="margin:4px 0 0">Avisamos você por e-mail assim que ele for confirmado.</p></div>';
+      var PL = chargePlan(Q);
+      if (!sp && PL && PL.stage === "deposit") html += '<div class="card"><h3>Sinal para confirmar a data</h3><p class="price">' + brl(PL.cents) + '</p>' +
+        '<div class="split"><span class="muted">Sinal agora (' + depPct() + '%)</span><span>' + brl(PL.cents) + '</span><span class="muted">Saldo até ' + e(ymdBr(PL.due)) + '</span><span>' + brl(Q.amount_cents - PL.cents) + '</span><span class="tot">Total</span><span class="tot">' + brl(Q.amount_cents) + '</span></div>' +
+        '<p class="muted small" style="margin:8px 0 8px">Pague o sinal por Pix ou cartão. A data fica garantida e o contato do palestrante é liberado na hora. O saldo é pago aqui mesmo até ' + balDays() + ' dias antes do evento, e avisamos você por e-mail antes do vencimento.</p><div id="paybox"></div></div>';
+      if (!sp && PL && PL.stage === "full") html += '<div class="card"><h3>Pagamento</h3><p class="price">' + brl(Q.amount_cents) + '</p><p class="muted small" style="margin:4px 0 8px">Pague por Pix ou cartão aqui mesmo. O valor vai para o palestrante pelo Mercado Pago, e o contato dele é liberado assim que o pagamento for confirmado.</p><div id="paybox"></div></div>';
+      if (!sp && PL && PL.stage === "balance") {
+        var late = PL.due && daysBetween(todaySP(), String(PL.due).slice(0, 10)) < 0;
+        html += '<div class="card' + (late ? " dark" : "") + '"><h3>' + (late ? "Saldo em atraso" : "Saldo da palestra") + '</h3><p class="price">' + brl(PL.cents) + '</p><p class="muted small" style="margin:4px 0 8px">Sinal de ' + brl(Q.deposit_cents) + " já pago. " + (PL.due ? (late ? "O saldo venceu em " : "Pague até ") + e(ymdBr(PL.due)) + ". " : "") + 'Pix ou cartão, aqui mesmo.</p><div id="paybox"></div></div>';
+      }
+      if (sp && Q.status === "accepted") html += '<div class="card"><h3>Aguardando o pagamento da empresa</h3><p class="muted small" style="margin:4px 0 0">' + (PL && PL.stage === "deposit" ? "A empresa paga " + depPct() + "% de sinal para confirmar a data e o restante até " + e(ymdBr(PL.due)) + ". " : "") + "Avisamos você por e-mail assim que o pagamento for confirmado.</p></div>";
+      if (sp && Q.status === "paid" && Q.deposit_cents) html += '<div class="card"><h3>' + (Q.balance_paid_at ? "Pagamento quitado" : "Sinal pago") + '</h3><p class="muted small" style="margin:4px 0 0">' +
+        (Q.balance_paid_at ? "A empresa pagou o sinal e o saldo. Bom evento!" : "Sinal de " + brl(Q.deposit_cents) + " pago. Saldo de " + brl(Q.amount_cents - Q.deposit_cents) + (Q.balance_due_on ? " até " + e(ymdBr(Q.balance_due_on)) : "") + ". Avisamos você quando for pago.") + "</p></div>";
       if (Q.status === "paid" || Q.status === "done") html += '<div class="card" id="contacts"><h3>Contato liberado</h3><p class="muted small">Carregando…</p></div>';
-      if (!sp && Q.status === "paid") html += '<button class="full ghost" id="done" type="button">A palestra já aconteceu</button>';
+      if (!sp && Q.status === "paid" && (!Q.deposit_cents || Q.balance_paid_at)) html += '<button class="full ghost" id="done" type="button">A palestra já aconteceu</button>';
 
       // conversa
       var canWrite = ["declined", "cancelled"].indexOf(Q.status) < 0;
@@ -651,10 +686,11 @@
         };
       }
       if ($("acc")) $("acc").onclick = function () {
-        if (!window.confirm("Aceitar a proposta de " + brl(Q.amount_cents) + "? Em seguida você poderá pagar.")) return;
+        var pa = chargePlan(Object.assign({}, Q, { status: "accepted" }));
+        if (!window.confirm("Aceitar a proposta de " + brl(Q.amount_cents) + "? " + (pa && pa.stage === "deposit" ? "Em seguida você paga o sinal de " + brl(pa.cents) + " (" + depPct() + "%) para confirmar a data, e o saldo até " + ymdBr(pa.due) + "." : "Em seguida você poderá pagar."))) return;
         update({ status: "accepted" }, "Proposta aceita.");
       };
-      if ($("paybox")) payPanel($("paybox"), { kind: "quote", quoteId: Q.id, amount: Q.amount_cents, onPaid: function () { load().then(render); } });
+      if ($("paybox")) { var PP = chargePlan(Q); payPanel($("paybox"), { kind: "quote", quoteId: Q.id, amount: PP ? PP.cents : Q.amount_cents, onPaid: function () { load().then(render); } }); }
       if ($("done")) $("done").onclick = function () { update({ status: "done" }, "Que bom! Obrigado por usar o SpeakerConnect."); };
       if ($("cancel")) $("cancel").onclick = function () { if (window.confirm("Cancelar este pedido?")) update({ status: "cancelled" }, "Pedido cancelado."); };
       if ($("contacts")) sb.rpc("quote_contacts", { qid: Q.id }).then(function (r) {
