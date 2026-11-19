@@ -861,7 +861,7 @@ async function profilePage(request, env) {
   return new Response(html, { status: 200, headers });
 }
 
-const STATIC_PAGES = ["/", "/sobre", "/termos", "/privacidade", "/termo-palestrante"];
+const STATIC_PAGES = ["/", "/sobre", "/entidades", "/termos", "/privacidade", "/termo-palestrante"];
 async function sitemap(request, env) {
   const base = siteBase(env);
   let rows = [];
@@ -1011,10 +1011,12 @@ export function cleanLead(b, today = todaySP()) {
     format: ["presencial", "online", "indefinido"].includes(b && b.format) ? b.format : null,
     audience: Number.isInteger(Number(b && b.audience)) && Number(b.audience) > 0 && Number(b.audience) <= 100000 ? Number(b.audience) : null,
     event_date: /^\d{4}-\d{2}-\d{2}$/.test(String((b && b.event_date) || "")) && !isNaN(Date.parse(b.event_date)) ? b.event_date : null,
+    kind: b && b.kind === "entidade" ? "entidade" : "indicacao", role: t("role", 120) || null,
   };
+  if (lead.kind === "entidade") { lead.theme = lead.theme || "Parceria com entidade"; lead.event_date = null; lead.format = null; lead.budget = null; }
   if (lead.event_date && lead.event_date < today) return { error: "A data do evento já passou." };
   if (lead.name.length < 2) return { error: "Informe seu nome." };
-  if (lead.company.length < 2) return { error: "Informe a empresa." };
+  if (lead.company.length < 2) return { error: lead.kind === "entidade" ? "Informe o nome da entidade." : "Informe a empresa." };
   if (!EMAIL_OK.test(lead.email)) return { error: "Informe um e-mail válido." };
   if (!lead.theme) return { error: "Escolha o tema." };
   return { lead };
@@ -1052,6 +1054,17 @@ async function indicacaoPost({ request, env, ctx }) {
   const site = siteUrl(env, request);
   const quando = lead.event_date ? fmtDate(lead.event_date) : "a definir";
   const fmt = { presencial: "Presencial", online: "Online", indefinido: "A definir" }[lead.format] || "-";
+  if (lead.kind === "entidade") {
+    later(ctx, sendMail(env, { to: env.NOTIFY_EMAIL, replyTo: lead.email, subject: `Entidade quer parceria: ${line(lead.company, 80)}`,
+      text: `Entidade: ${lead.company}\nNome: ${lead.name}${lead.role ? " (" + lead.role + ")" : ""}\nE-mail: ${lead.email}\nWhatsApp: ${lead.phone || "-"}\n` +
+            `Cidade: ${lead.place || "-"}\nAssociados: ${lead.audience || "-"}\nInteresse: ${lead.theme}\n\nMensagem:\n${lead.message || "-"}\n\n` +
+            `Responda este e-mail para falar direto com a pessoa. Veja todos em ${site}/equipe/ > Indicações.` }));
+    later(ctx, sendMail(env, { to: lead.email, replyTo: env.NOTIFY_EMAIL, subject: `Recebemos seu contato - ${BRAND}`,
+      text: `Olá, ${first(lead.name)}!\n\nObrigado pelo interesse em uma parceria entre ${lead.company} e o ${BRAND}.\n` +
+            `Vamos entrar em contato em até 1 dia útil para conversar sobre como apoiar a entidade e os associados.\n\n` +
+            `Enquanto isso, conheça os palestrantes em ${site}/#palestrantes\n\nEquipe ${BRAND}` }));
+    return json(200, { ok: true, id });
+  }
   later(ctx, sendMail(env, { to: env.NOTIFY_EMAIL, replyTo: lead.email, subject: `Pedido de indicação: ${line(lead.theme, 60)} - ${line(lead.company, 60)}`,
     text: `Nome: ${lead.name}\nEmpresa: ${lead.company}\nE-mail: ${lead.email}\nWhatsApp: ${lead.phone || "-"}\n\nTema: ${lead.theme}\nData: ${quando}\n` +
           `Formato: ${fmt}\nLocal: ${lead.place || "-"}\nPúblico: ${lead.audience ? lead.audience + " pessoas" : "-"}\nOrçamento: ${lead.budget || "-"}\n\n` +

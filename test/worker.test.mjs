@@ -384,3 +384,16 @@ test("indicação: campos obrigatórios e data no passado", () => {
   assert.match(cleanLead({ name: "Ana", company: "X Ltda", email: "a@b.co", theme: "x", event_date: "2020-01-01" }, "2026-11-19").error, /passou/);
   assert.equal(cleanLead({ name: "Ana", company: "X Ltda", email: "a@b.co", theme: "x", format: "hack", audience: "-3" }).lead.format, null);
 });
+
+test("contato de entidade: grava como entidade e manda e-mails próprios", async () => {
+  const t = await setup();
+  t.db.leads = [];
+  const r = await t.call("/api/indicacao", { method: "POST", body: { kind: "entidade", name: "Christian", role: "Gerente", company: "CDL Vitória", email: "c@cdl.org.br", place: "Vitória/ES", audience: "800", message: "Vamos conversar", elapsed: 9000 } });
+  assert.equal(r.status, 200);
+  assert.equal(t.db.leads[0].kind, "entidade");
+  assert.equal(t.db.leads[0].theme, "Parceria com entidade");
+  assert.equal(t.db.leads[0].role, "Gerente");
+  await tick();
+  assert.match(t.mails.find((m) => m.to[0] === t.env.NOTIFY_EMAIL).subject, /Entidade quer parceria: CDL Vitória/);
+  assert.match(t.mails.find((m) => m.to[0] === "c@cdl.org.br").text, /parceria entre CDL Vitória/);
+});

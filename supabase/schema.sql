@@ -934,3 +934,7 @@ drop policy if exists leads_admin_read on public.leads;
 create policy leads_admin_read on public.leads for select to authenticated using (public.is_admin());
 drop policy if exists leads_admin_update on public.leads;
 create policy leads_admin_update on public.leads for update to authenticated using (public.is_admin()) with check (public.is_admin());
+-- Contatos de entidades (página /entidades) usam a mesma tabela: kind = 'entidade', role = cargo, audience = nº de associados.
+alter table public.leads add column if not exists kind text not null default 'indicacao' check (kind in ('indicacao', 'entidade'));
+alter table public.leads add column if not exists role text check (char_length(role) <= 120);
+create index if not exists leads_kind_idx on public.leads (kind, created_at desc);

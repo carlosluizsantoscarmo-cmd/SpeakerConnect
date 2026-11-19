@@ -49,7 +49,7 @@
     if (f) {
       f.innerHTML = '<div class="wrap"><div><a class="logo" href="/">' + MIC + "SpeakerConnect</a>" +
         '<p class="small" style="margin-top:10px;max-width:38ch">Palestrantes para eventos corporativos, SIPAT, convenções e treinamentos, com orçamento e pagamento pela plataforma.</p></div>' +
-        '<div><nav aria-label="Rodapé"><a href="/sobre">Quem somos</a><a href="/termos.html">Termos de uso</a><a href="/privacidade.html">Privacidade</a><a href="/app/">Entrar</a></nav>' +
+        '<div><nav aria-label="Rodapé"><a href="/sobre">Quem somos</a><a href="/entidades">Para entidades</a><a href="/termos.html">Termos de uso</a><a href="/privacidade.html">Privacidade</a><a href="/app/">Entrar</a></nav>' +
         (C.email ? '<p class="small" style="margin-top:12px">Contato: <a href="mailto:' + e(C.email) + '">' + e(C.email) + "</a></p>" : "") +
         socialLinks() +
         '<p class="small">© ' + new Date().getFullYear() + " SpeakerConnect · CNPJ 46.090.377/0001-80 · Serra/ES</p></div></div>";
@@ -365,36 +365,47 @@
     var pre = new URLSearchParams(location.search).get("indicar");
     if (pre && list.indexOf(pre) > -1) sel.value = pre;
   }
-  function leadForm() {
-    var f = $("#lead-form");
-    if (!f) return;
-    var F = f.elements, shown = Date.now(), msg = $("#lf-msg"), go = $("#lf-go");
-    var today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-    F.event_date.min = today;
-    // tema vindo do link "Pedir indicação" do menu de temas (?indicar=Tema)
-    var pre = new URLSearchParams(location.search).get("indicar");
-    function preset() { if (pre) { var ok = [].some.call(F.theme.options, function (o) { return o.text === pre; }); if (ok) F.theme.value = pre; } }
-    preset();
+  // Formulários "A gente indica" (página inicial) e "Para entidades": mesmo envio para /api/indicacao.
+  function bindLead(f, o) {
+    var F = f.elements, shown = Date.now(), msg = $(o.msg), go = $(o.go), label = go.textContent;
     function say(t, bad) { msg.textContent = t || ""; msg.className = "lf-msg" + (bad ? " err" : ""); }
     f.addEventListener("submit", function (ev) {
       ev.preventDefault();
       [].forEach.call(f.querySelectorAll(".bad"), function (x) { x.classList.remove("bad"); });
-      var need = ["name", "company", "email", "theme"].filter(function (k) { return !F[k].value.trim(); });
+      var need = o.need.filter(function (k) { return !F[k].value.trim(); });
       if (!need.length && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(F.email.value.trim())) need = ["email"];
       if (need.length) { need.forEach(function (k) { F[k].classList.add("bad"); }); F[need[0]].focus(); return say(need[0] === "email" && F.email.value ? "Confira o e-mail." : "Preencha os campos destacados.", true); }
-      var body = { elapsed: Date.now() - shown, source: (document.referrer || "").slice(0, 200) };
-      ["name", "company", "email", "phone", "theme", "event_date", "format", "place", "audience", "budget", "message", "website"].forEach(function (k) { body[k] = F[k].value; });
+      var body = { kind: o.kind, elapsed: Date.now() - shown, source: (document.referrer || "").slice(0, 200) };
+      [].forEach.call(F, function (el) { if (el.name) body[el.name] = el.value; });
       go.disabled = true; go.textContent = "Enviando…"; say("");
       fetch("/api/indicacao", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || "Não foi possível enviar agora."); return d; }); })
         .then(function () {
-          f.innerHTML = '<div class="lf-done"><h3>Pedido recebido! 🎤</h3><p>Nossa equipe vai responder em até 1 dia útil com sugestões de palestrantes para o seu evento.</p><p class="muted">Enviamos uma confirmação para o seu e-mail.</p>' +
-            (C.whatsapp ? '<a class="btn" target="_blank" rel="noopener" href="https://wa.me/' + e(C.whatsapp) + "?text=" + encodeURIComponent("Olá! Acabei de pedir uma indicação de palestrante pelo site.") + '">Falar no WhatsApp</a>' : "") + "</div>";
+          f.innerHTML = '<div class="lf-done"><h3>' + o.doneTitle + '</h3><p>' + o.doneText + '</p><p class="muted">Enviamos uma confirmação para o seu e-mail.</p>' +
+            (C.whatsapp ? '<a class="btn" target="_blank" rel="noopener" href="https://wa.me/' + e(C.whatsapp) + "?text=" + encodeURIComponent(o.waText) + '">Falar no WhatsApp</a>' : "") + "</div>";
           f.scrollIntoView({ block: "center" });
         })
-        .catch(function (x) { go.disabled = false; go.textContent = "Quero indicações"; say(x.message || "Não foi possível enviar agora. Tente de novo ou fale pelo WhatsApp.", true); });
+        .catch(function (x) { go.disabled = false; go.textContent = label; say(x.message || "Não foi possível enviar agora. Tente de novo ou fale pelo WhatsApp.", true); });
     });
   }
+  function leadForm() {
+    var f = $("#lead-form");
+    if (f) {
+      var F = f.elements;
+      F.event_date.min = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      // tema vindo do link "Pedir indicação" do menu de temas (?indicar=Tema)
+      var pre = new URLSearchParams(location.search).get("indicar");
+      if (pre && [].some.call(F.theme.options, function (o) { return o.text === pre; })) F.theme.value = pre;
+      bindLead(f, { kind: "indicacao", msg: "#lf-msg", go: "#lf-go", need: ["name", "company", "email", "theme"],
+        doneTitle: "Pedido recebido! 🎤", doneText: "Nossa equipe vai responder em até 1 dia útil com sugestões de palestrantes para o seu evento.",
+        waText: "Olá! Acabei de pedir uma indicação de palestrante pelo site." });
+    }
+    var g = $("#ent-form");
+    if (g) bindLead(g, { kind: "entidade", msg: "#ent-msg", go: "#ent-go", need: ["name", "company", "email"],
+      doneTitle: "Contato recebido! 🤝", doneText: "Vamos falar com você em até 1 dia útil para conversar sobre a parceria.",
+      waText: "Olá! Represento uma entidade e quero conversar sobre parceria com o SpeakerConnect." });
+  }
+
 
   // Cloudflare Web Analytics (só nas páginas públicas; sem cookies)
   function analytics() {

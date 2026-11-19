@@ -359,3 +359,25 @@ section[id]{scroll-margin-top:170px}
 .reel-video{justify-self:center;width:min(320px,100%);background:var(--stage);border-radius:30px;padding:10px;box-shadow:0 30px 70px rgba(27,26,75,.28)}
 .reel-video video{display:block;width:100%;height:auto;aspect-ratio:9/16;border-radius:22px;background:#000}
 @media (max-width:860px){.reel .wrap{grid-template-columns:1fr;gap:28px}.reel-video{width:min(300px,86%)}}
+
+/* página Para entidades */
+.ent-ben{padding:64px 0 24px}
+.ent-ben ul{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.ent-ben li{background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:24px 24px 22px;display:grid;gap:8px}
+.ent-ben li b{font-family:var(--f-display);font-stretch:108%;font-size:20px;color:var(--stage)}
+.ent-ben li span:last-child{color:var(--mut);line-height:1.5}
+.ent-ic{width:40px;height:40px;border-radius:12px;background:var(--spot);color:var(--stage);display:grid;place-items:center;font:800 18px var(--f-display)}
+.ent-how{padding:40px 0 64px}
+.ent-how .wrap{display:grid;grid-template-columns:1.1fr 1fr;gap:40px;align-items:start}
+.ent-steps{list-style:none;counter-reset:s;margin:8px 0 0;padding:0;display:grid;gap:18px}
+.ent-steps li{counter-increment:s;position:relative;padding-left:58px}
+.ent-steps li::before{content:counter(s);position:absolute;left:0;top:0;width:40px;height:40px;border-radius:50%;background:var(--stage);color:var(--spot);display:grid;place-items:center;font:800 18px var(--f-display)}
+.ent-steps b{display:block;color:var(--ink);font-size:18px}
+.ent-steps span{color:var(--mut)}
+.ent-box{background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:26px}
+.ent-tags{display:flex;flex-wrap:wrap;gap:8px}
+.ent-tags span{background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:14.5px;font-weight:600;color:var(--stage)}
+.ent-note{color:var(--mut);font-size:15px;margin:16px 0 0}
+.ent .rec{padding:64px 0}
+@media (max-width:760px){.ent-ben ul,.ent-how .wrap{grid-template-columns:1fr}.ent-ben{padding:44px 0 12px}}
+.ent .rec h2{color:#fff}
