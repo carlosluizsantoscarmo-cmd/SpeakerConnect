@@ -349,3 +349,13 @@ section[id]{scroll-margin-top:170px}
 @media (max-width:860px){.rec .wrap{grid-template-columns:1fr;gap:28px}}
 @media (max-width:560px){.lf-row{grid-template-columns:1fr}.lead-form{padding:20px}}
 .hero-rec{margin:14px 0 0;font-weight:600;color:#D6D5F0}.hero-rec a{color:var(--spot)}
+
+/* vídeo de apresentação */
+.reel .wrap{display:grid;grid-template-columns:1.1fr .9fr;gap:56px;align-items:center}
+.reel .eyebrow{font:700 13px var(--f-body);letter-spacing:.14em;text-transform:uppercase;color:var(--brand);margin-bottom:12px}
+.reel-copy p{color:var(--mut);margin-top:16px;max-width:52ch}
+.reel-cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}
+.reel-cta .btn.line{color:var(--stage)}
+.reel-video{justify-self:center;width:min(320px,100%);background:var(--stage);border-radius:30px;padding:10px;box-shadow:0 30px 70px rgba(27,26,75,.28)}
+.reel-video video{display:block;width:100%;height:auto;aspect-ratio:9/16;border-radius:22px;background:#000}
+@media (max-width:860px){.reel .wrap{grid-template-columns:1fr;gap:28px}.reel-video{width:min(300px,86%)}}
