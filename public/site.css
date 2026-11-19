@@ -321,3 +321,31 @@ section[id]{scroll-margin-top:170px}
 .btn.ghost{background:transparent;color:#fff;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
 .btn.ghost:hover{background:rgba(255,255,255,.1)}
 @media (max-width:760px){.ab-story .wrap,.ab-mvv .wrap{grid-template-columns:1fr}.ab-hero{padding:52px 0 44px}}
+
+/* "Nós indicamos": formulário de pedido de indicação */
+.rec{background:var(--stage);color:#fff}
+.rec .wrap{display:grid;grid-template-columns:1fr 1.15fr;gap:48px;align-items:start}
+.rec .eyebrow{font:700 13px var(--f-body);letter-spacing:.14em;text-transform:uppercase;color:var(--spot);margin-bottom:12px}
+.rec h2 .hl{color:var(--spot)}
+.lead-intro p{color:#D6D5F0;margin-top:16px}
+.lead-intro ul{list-style:none;padding:0;margin:20px 0 0;display:grid;gap:10px}
+.lead-intro li{padding-left:28px;position:relative;color:#fff;font-weight:600}
+.lead-intro li::before{content:"";position:absolute;left:0;top:7px;width:14px;height:8px;border-left:3px solid var(--spot);border-bottom:3px solid var(--spot);transform:rotate(-45deg)}
+.lead-form{background:#fff;color:var(--ink);border-radius:var(--r-lg);padding:26px;display:grid;gap:14px;box-shadow:0 24px 60px rgba(0,0,0,.25)}
+.lead-form label{display:grid;gap:6px;font:600 14.5px var(--f-body)}
+.lead-form .opt{font-weight:500;color:var(--mut)}
+.lead-form input,.lead-form select,.lead-form textarea{font:500 16px var(--f-body);color:var(--ink);background:#fff;border:1.5px solid var(--line);border-radius:var(--r-sm);padding:11px 13px;width:100%;min-width:0}
+.lead-form input:focus,.lead-form select:focus,.lead-form textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(79,70,229,.15)}
+.lead-form .bad{border-color:#C2410C}
+.lf-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.lead-form .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.lead-form .btn{width:100%;margin-top:4px}
+.lead-form .btn[disabled]{opacity:.6;cursor:wait}
+.lf-msg{margin:0;font-weight:600;font-size:15px}.lf-msg:empty{display:none}
+.lf-msg.err{color:#B42318}
+.lf-note{margin:0;font-size:13px;color:var(--mut)}
+.lf-done{text-align:center;padding:30px 10px}
+.lf-done h3{font-size:24px;margin-bottom:10px}
+@media (max-width:860px){.rec .wrap{grid-template-columns:1fr;gap:28px}}
+@media (max-width:560px){.lf-row{grid-template-columns:1fr}.lead-form{padding:20px}}
+.hero-rec{margin:14px 0 0;font-weight:600;color:#D6D5F0}.hero-rec a{color:var(--spot)}

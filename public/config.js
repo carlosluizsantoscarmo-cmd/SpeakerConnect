@@ -20,5 +20,8 @@ window.SC = {
   depositPct: 30,
   balanceDays: 7,
   cancelFeePct: 10,
-  verifiedPrice: "R$ 199,00 por ano"
+  verifiedPrice: "R$ 199,00 por ano",
+  // Cloudflare Web Analytics (visitas do site, sem cookies): o "token" do site em Analytics & Logs > Web Analytics.
+  // Vazio = não mede. Se a medição automática do Cloudflare já estiver ligada, deixe vazio para não contar em dobro.
+  cfBeacon: ""
 };

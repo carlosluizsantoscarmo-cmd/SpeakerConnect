@@ -42,6 +42,7 @@
         <input id="hero-q" type="search" placeholder="Tema, nome ou cidade" autocomplete="off">
         <button class="btn spot" type="submit">Buscar</button>
       </form>
+      <p class="hero-rec">Não sabe quem escolher? <a href="#indicacao">Peça uma indicação da nossa equipe →</a></p>
       <ul class="trust">
         <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Perfis revisados pela equipe</li>
         <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Orçamento sem custo</li>
@@ -72,6 +73,46 @@
       <select id="f-fmt"><option value="">Formato</option><option value="presencial">Presencial</option><option value="online">Online</option></select>
     </div>
     <div class="grid" id="grid" aria-live="polite"></div>
+  </div>
+</section>
+
+<section class="rec" id="indicacao">
+  <div class="wrap">
+    <div class="lead-intro">
+      <p class="eyebrow">Atendimento da equipe</p>
+      <h2>Não sabe quem escolher? <span class="hl">A gente indica.</span></h2>
+      <p>Conte como é o seu evento e a nossa equipe responde em até 1 dia útil com 2 ou 3 palestrantes que combinam com o tema, o público e o orçamento.</p>
+      <ul role="list">
+        <li>Sem custo e sem compromisso</li>
+        <li>Indicações feitas por pessoas, não por algoritmo</li>
+        <li>Ideal para SIPAT, semanas de RH, convenções e campanhas</li>
+      </ul>
+    </div>
+    <form class="lead-form" id="lead-form" novalidate>
+      <div class="lf-row">
+        <label>Seu nome<input name="name" autocomplete="name" required maxlength="120"></label>
+        <label>Empresa<input name="company" autocomplete="organization" required maxlength="160"></label>
+      </div>
+      <div class="lf-row">
+        <label>E-mail<input name="email" type="email" autocomplete="email" required maxlength="200"></label>
+        <label>WhatsApp <span class="opt">(opcional)</span><input name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="30"></label>
+      </div>
+      <label>Tema da palestra<select name="theme" id="lf-theme" required><option value="">Escolha um tema</option><option>Ainda não sei, quero sugestões</option></select></label>
+      <div class="lf-row">
+        <label>Data do evento <span class="opt">(se já souber)</span><input name="event_date" type="date"></label>
+        <label>Formato<select name="format"><option value="presencial">Presencial</option><option value="online">Online</option><option value="indefinido">Ainda não sei</option></select></label>
+      </div>
+      <div class="lf-row">
+        <label>Cidade do evento <span class="opt">(opcional)</span><input name="place" maxlength="120" placeholder="Ex.: Serra/ES"></label>
+        <label>Público <span class="opt">(nº de pessoas)</span><input name="audience" type="number" min="1" max="100000" inputmode="numeric"></label>
+      </div>
+      <label>Orçamento aproximado<select name="budget"><option value="">Prefiro não informar</option><option>Até R$ 1.000</option><option>R$ 1.000 a R$ 3.000</option><option>R$ 3.000 a R$ 5.000</option><option>Acima de R$ 5.000</option></select></label>
+      <label>Conte mais sobre o evento <span class="opt">(opcional)</span><textarea name="message" rows="3" maxlength="2000" placeholder="Objetivo, perfil do público, duração..."></textarea></label>
+      <label class="hp" aria-hidden="true">Site<input name="website" tabindex="-1" autocomplete="off"></label>
+      <p class="lf-msg" id="lf-msg" role="status" aria-live="polite"></p>
+      <button class="btn spot" type="submit" id="lf-go">Quero indicações</button>
+      <p class="lf-note">Usamos seus dados só para responder a este pedido. Veja a <a href="/privacidade">política de privacidade</a>.</p>
+    </form>
   </div>
 </section>
 

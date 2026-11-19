@@ -95,6 +95,7 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
   <span class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>Equipe</span>
   <nav id="tabs" hidden aria-label="Seções">
     <button data-t="palestrantes" class="on">Palestrantes<span class="n" id="n-pend" hidden></span></button>
+    <button data-t="indicacoes">Indicações<span class="n" id="n-lead" hidden></span></button>
     <button data-t="pedidos">Pedidos</button>
     <button data-t="agenda">Agenda<span class="n" id="n-ag" hidden></span></button>
     <button data-t="pagamentos">Financeiro<span class="n" id="n-rep" hidden></span></button>
@@ -213,13 +214,17 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
       sb.from("payments").select("*").order("created_at", { ascending: false }).limit(2000),
       sb.from("categories").select("*").order("sort"),
       sb.from("speaker_documents").select("*").limit(3000),
-      sb.from("contact_attempts").select("*").order("created_at", { ascending: false }).limit(500)
+      sb.from("contact_attempts").select("*").order("created_at", { ascending: false }).limit(500),
+      sb.from("leads").select("*").order("created_at", { ascending: false }).limit(500)
     ]).then(function (r) {
-      var bad = r.filter(function (x) { return x.error; })[0];
+      var bad = r.slice(0, 8).filter(function (x) { return x.error; })[0];
       if (bad) throw bad.error;
       data = { speakers: r[0].data, profiles: r[1].data, companies: r[2].data, quotes: r[3].data, payments: r[4].data, categories: r[5].data, docs: {} };
       (r[6].data || []).forEach(function (x) { data.docs[x.speaker_id] = x; });
       data.attempts = r[7].data || [];
+      data.leads = (!r[8].error && r[8].data) || [];
+      var nl = data.leads.filter(function (l) { return l.status === "new"; }).length;
+      $("n-lead").hidden = !nl; $("n-lead").textContent = nl;
       data.prof = {}; data.profiles.forEach(function (p) { data.prof[p.id] = p; });
       var pend = data.speakers.filter(function (s) { return s.status === "pending"; }).length;
       var rep = data.payments.filter(function (p) { return p.kind === "quote" && p.status === "paid" && !p.payout_done_at; }).length +
@@ -304,6 +309,59 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
 
   // ---------- pedidos ----------
   var QST = { requested: ["Aguardando proposta", "warn"], proposed: ["Proposta enviada", ""], accepted: ["Aguardando pagamento", "warn"], paid: ["Pago", "ok"], done: ["Realizado", "ok"], declined: ["Recusado", "err"], cancelled: ["Cancelado", "err"] };
+
+  // ---------- pedidos de indicação ("Nós indicamos", no site) ----------
+  var LST = { new: ["Novo", "warn"], contacted: ["Em atendimento", ""], won: ["Virou pedido", "ok"], lost: ["Não avançou", "err"] };
+  var ldFilter = "open";
+  function screenLeads() {
+    var L = data.leads || [];
+    var list = L.filter(function (l) { return ldFilter === "all" || (ldFilter === "open" ? (l.status === "new" || l.status === "contacted") : l.status === ldFilter); });
+    var n = function (st) { return L.filter(function (l) { return l.status === st; }).length; };
+    var html = '<div class="bar"><h1 class="grow">Pedidos de indicação</h1><select id="ldf">' + [["open", "Em aberto"], ["new", "Novos"], ["contacted", "Em atendimento"], ["won", "Viraram pedido"], ["lost", "Não avançaram"], ["all", "Todos"]].map(function (o) {
+      return '<option value="' + o[0] + '"' + (o[0] === ldFilter ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></div>" +
+      '<div class="stats"><div class="stat ' + (n("new") ? "s-warn" : "") + '"><b>' + n("new") + "</b><span>Novos (responder em até 1 dia útil)</span></div>" +
+      '<div class="stat"><b>' + n("contacted") + "</b><span>Em atendimento</span></div>" +
+      '<div class="stat"><b>' + n("won") + "</b><span>Viraram pedido</span></div>" +
+      '<div class="stat"><b>' + L.length + "</b><span>Total recebido</span></div></div>";
+    if (!list.length) html += '<div class="empty">Nenhum pedido de indicação nesta lista.' + (L.length ? "" : " Eles chegam pelo formulário \"A gente indica\" da página principal.") + "</div>";
+    else html += '<div class="scroll"><table><thead><tr><th>Quem pediu</th><th>Evento</th><th>Situação</th></tr></thead><tbody>' + list.map(function (l) {
+      var st = LST[l.status] || [l.status, ""], tel = String(l.phone || "").replace(/\D/g, "");
+      if (tel && tel.length <= 11) tel = "55" + tel;
+      var age = Math.floor((Date.now() - new Date(l.created_at)) / 36e5);
+      return "<tr><td><b>" + e(l.name) + "</b><div class=\"sub\">" + e(l.company) + '</div><div class="sub"><a href="mailto:' + e(l.email) + "?subject=" + encodeURIComponent("Indicação de palestrantes - SpeakerConnect") + '">' + e(l.email) + "</a>" +
+        (l.phone ? ' · <a href="https://wa.me/' + e(tel) + '" target="_blank" rel="noopener">' + e(l.phone) + "</a>" : "") + '</div><div class="sub">Recebido ' + d(l.created_at) + (l.status === "new" && age >= 24 ? ' <span class="pill err">há ' + Math.floor(age / 24) + " dia(s)</span>" : "") + "</div></td>" +
+        "<td><b>" + e(l.theme) + '</b><div class="sub">' + (l.event_date ? ymd(l.event_date) : "Data a definir") + " · " + e({ presencial: "Presencial", online: "Online", indefinido: "Formato a definir" }[l.format] || "—") + (l.place ? " · " + e(l.place) : "") + "</div>" +
+        '<div class="sub">' + (l.audience ? l.audience + " pessoas" : "Público não informado") + " · " + e(l.budget || "Orçamento não informado") + "</div>" +
+        (l.message ? '<details class="more"><summary>Detalhes</summary><p>' + e(l.message) + "</p></details>" : "") + "</td>" +
+        '<td><span class="pill ' + st[1] + '">' + st[0] + '</span><div class="acts" style="margin-top:8px"><select data-lead="' + l.id + '">' + Object.keys(LST).map(function (k) { return '<option value="' + k + '"' + (k === l.status ? " selected" : "") + ">" + LST[k][0] + "</option>"; }).join("") + "</select>" +
+        '<button class="ghost" data-note="' + l.id + '">' + (l.notes ? "Editar anotação" : "Anotar") + "</button></div>" + (l.notes ? '<div class="sub">📝 ' + e(l.notes) + "</div>" : "") + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+    main.innerHTML = html;
+    $("ldf").onchange = function () { ldFilter = this.value; render(); };
+    main.querySelectorAll("[data-lead]").forEach(function (sel) {
+      sel.onchange = function () {
+        var id = sel.getAttribute("data-lead");
+        sb.from("leads").update({ status: sel.value, updated_at: new Date().toISOString() }).eq("id", id).then(function (r) {
+          if (r.error) return toast("Não consegui salvar: " + r.error.message);
+          toast("Situação atualizada."); refresh();
+        });
+      };
+    });
+    main.querySelectorAll("[data-note]").forEach(function (b) {
+      b.onclick = function () {
+        var l = data.leads.filter(function (x) { return x.id === b.getAttribute("data-note"); })[0];
+        var pr = ask("Anotação sobre " + l.company, "Só a equipe vê.", "Ex.: indicados Ana e Bruno em 20/11; aguardando retorno.", "Salvar");
+        $("dlgx").value = l.notes || "";
+        pr.then(function (t) {
+          if (t === null) return;
+          sb.from("leads").update({ notes: t.trim().slice(0, 2000) || null, updated_at: new Date().toISOString() }).eq("id", l.id).then(function (r) {
+            if (r.error) return toast("Não consegui salvar: " + r.error.message);
+            toast("Anotação salva."); refresh();
+          });
+        });
+      };
+    });
+  }
 
   // ---------- agenda de palestras ----------
   var agFilter = "next";
@@ -512,7 +570,7 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
 
   function render() {
     document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-t") === tab); });
-    ({ palestrantes: screenSpeakers, pedidos: screenQuotes, agenda: screenAgenda, pagamentos: screenPayments, empresas: screenCompanies, temas: screenThemes, alertas: screenAlerts })[tab]();
+    ({ palestrantes: screenSpeakers, indicacoes: screenLeads, pedidos: screenQuotes, agenda: screenAgenda, pagamentos: screenPayments, empresas: screenCompanies, temas: screenThemes, alertas: screenAlerts })[tab]();
   }
 
   function start(session) {

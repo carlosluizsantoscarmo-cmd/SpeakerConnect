@@ -107,13 +107,13 @@ async function currentUser(request, env) {
 }
 
 // ---------- e-mails (Resend) ----------
-export async function sendMail(env, { to, subject, text }) {
+export async function sendMail(env, { to, subject, text, replyTo }) {
   if (!env.RESEND_API_KEY || !to) return false;
   try {
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: env.MAIL_FROM || `${BRAND} <onboarding@resend.dev>`, to: [to], subject, text }),
+      body: JSON.stringify(Object.assign({ from: env.MAIL_FROM || `${BRAND} <onboarding@resend.dev>`, to: [to], subject, text }, replyTo ? { reply_to: replyTo } : {})),
     });
     if (!r.ok) console.error("e-mail recusado pelo Resend:", r.status);
     return r.ok;
@@ -942,6 +942,69 @@ export async function balanceReminders(env, now = Date.now()) {
   return sent;
 }
 
+// ---------- POST /api/indicacao: "Nós indicamos" (formulário público do site) ----------
+const EMAIL_OK = /^[^\s@<>(),;:"]{1,64}@[a-z0-9.-]+\.[a-z]{2,}$/i;
+export function cleanLead(b, today = todaySP()) {
+  const t = (k, n) => line(b && b[k], n).trim();
+  const lead = {
+    name: t("name", 120), company: t("company", 160), email: t("email", 200).toLowerCase(), phone: t("phone", 30) || null,
+    theme: t("theme", 80), place: t("place", 120) || null, budget: t("budget", 40) || null,
+    message: String((b && b.message) || "").replace(/\r/g, "").trim().slice(0, 2000) || null, source: t("source", 200) || null,
+    format: ["presencial", "online", "indefinido"].includes(b && b.format) ? b.format : null,
+    audience: Number.isInteger(Number(b && b.audience)) && Number(b.audience) > 0 && Number(b.audience) <= 100000 ? Number(b.audience) : null,
+    event_date: /^\d{4}-\d{2}-\d{2}$/.test(String((b && b.event_date) || "")) && !isNaN(Date.parse(b.event_date)) ? b.event_date : null,
+  };
+  if (lead.event_date && lead.event_date < today) return { error: "A data do evento já passou." };
+  if (lead.name.length < 2) return { error: "Informe seu nome." };
+  if (lead.company.length < 2) return { error: "Informe a empresa." };
+  if (!EMAIL_OK.test(lead.email)) return { error: "Informe um e-mail válido." };
+  if (!lead.theme) return { error: "Escolha o tema." };
+  return { lead };
+}
+
+async function sha256hex(x) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(x));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function indicacaoPost({ request, env, ctx }) {
+  if (!configured(env)) return json(503, { error: "Servidor não configurado." });
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(siteUrl(env, request)).origin && origin !== new URL(request.url).origin) return json(403, { error: "Origem não permitida." });
+  const b = await readBody(request, 6000);
+  if (!b) return json(400, { error: "Pedido inválido." });
+  // Robôs: campo escondido preenchido ou formulário enviado rápido demais. Responde "ok" e não grava nada.
+  if (b.website || (Number(b.elapsed) > 0 && Number(b.elapsed) < 2500)) return json(200, { ok: true });
+  if (env.TURNSTILE_SECRET) {
+    const f = new FormData();
+    f.append("secret", env.TURNSTILE_SECRET); f.append("response", String(b.captcha || ""));
+    const ip0 = request.headers.get("cf-connecting-ip"); if (ip0) f.append("remoteip", ip0);
+    const v = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: f }).then((r) => r.json()).catch(() => ({}));
+    if (!v.success) return json(400, { error: "Confirme que você não é um robô e envie de novo." });
+  }
+  const c = cleanLead(b);
+  if (c.error) return json(400, { error: c.error });
+  const lead = c.lead;
+  lead.ip_hash = await sha256hex("sc-lead:" + (request.headers.get("cf-connecting-ip") || "?") + ":" + (env.SUPABASE_URL || ""));
+  const since = new Date(Date.now() - 3600e3).toISOString();
+  const recent = await sb(env, `/rest/v1/leads?ip_hash=eq.${lead.ip_hash}&created_at=gt.${encodeURIComponent(since)}&select=id`);
+  if (Array.isArray(recent) && recent.length >= 3) return json(429, { error: "Recebemos vários pedidos seus agora há pouco. Fale com a gente pelo WhatsApp." });
+  const saved = await sb(env, "/rest/v1/leads", { method: "POST", body: lead, prefer: "return=representation" });
+  const id = Array.isArray(saved) && saved[0] ? saved[0].id : null;
+  const site = siteUrl(env, request);
+  const quando = lead.event_date ? fmtDate(lead.event_date) : "a definir";
+  const fmt = { presencial: "Presencial", online: "Online", indefinido: "A definir" }[lead.format] || "-";
+  later(ctx, sendMail(env, { to: env.NOTIFY_EMAIL, replyTo: lead.email, subject: `Pedido de indicação: ${line(lead.theme, 60)} - ${line(lead.company, 60)}`,
+    text: `Nome: ${lead.name}\nEmpresa: ${lead.company}\nE-mail: ${lead.email}\nWhatsApp: ${lead.phone || "-"}\n\nTema: ${lead.theme}\nData: ${quando}\n` +
+          `Formato: ${fmt}\nLocal: ${lead.place || "-"}\nPúblico: ${lead.audience ? lead.audience + " pessoas" : "-"}\nOrçamento: ${lead.budget || "-"}\n\n` +
+          `Detalhes:\n${lead.message || "-"}\n\nResponda este e-mail para falar direto com a pessoa. Veja todos em ${site}/equipe/ > Indicações.` }));
+  later(ctx, sendMail(env, { to: lead.email, replyTo: env.NOTIFY_EMAIL, subject: `Recebemos seu pedido de indicação - ${BRAND}`,
+    text: `Olá, ${first(lead.name)}!\n\nRecebemos seu pedido de indicação de palestrante sobre "${lead.theme}"` + (lead.event_date ? ` para ${quando}` : "") + `.\n` +
+          `Nossa equipe vai analisar e enviar sugestões de palestrantes em até 1 dia útil, por e-mail` + (lead.phone ? " ou WhatsApp" : "") + `.\n\n` +
+          `Enquanto isso, você pode ver os perfis em ${site}/#palestrantes\n\nSe quiser complementar alguma informação, é só responder este e-mail.\n\nEquipe ${BRAND}` }));
+  return json(200, { ok: true, id });
+}
+
 // ---------- roteador ----------
 const routes = {
   "/api/mp/config": { GET: mpConfigGet },
@@ -953,6 +1016,7 @@ const routes = {
   "/api/mp/conectar": { POST: conectarPost },
   "/api/mp-oauth/callback": { GET: oauthCallback },
   "/api/reembolso": { POST: reembolsoPost },
+  "/api/indicacao": { POST: indicacaoPost },
 };
 
 export default {

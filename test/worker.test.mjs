@@ -1,7 +1,7 @@
 // Testes do servidor com Supabase, Mercado Pago e Resend de mentira. Rodar: node --test test/worker.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { mpSignatureValid, split, brl, seal, makeState, chargePlan, balanceStep, balanceMails, addDays, todaySP } from "../worker.js";
+import worker, { mpSignatureValid, split, brl, seal, makeState, chargePlan, balanceStep, balanceMails, addDays, todaySP, cleanLead } from "../worker.js";
 
 const SPEAKER = "00000000-0000-0000-0000-000000000001";
 const COMPANY = "00000000-0000-0000-0000-000000000003";
@@ -349,4 +349,38 @@ test("lembretes do saldo: 7 dias antes, 1 dia antes e vencido", () => {
     { name: "Carla", email: "c@x" }, { name: "Ana", email: "a@x" }, 2);
   assert.deepEqual(ms.map((m) => m.to), ["c@x", "a@x", "eq@x"]);
   assert.match(ms[0].text, /R\$ 5\.600,00.*venceu em 10\/12\/2026/);
+});
+
+// ---------- "Nós indicamos" ----------
+test("indicação: valida, grava, avisa a equipe e confirma para a empresa", async () => {
+  const t = await setup();
+  t.db.leads = [];
+  const body = { name: "Carla Souza", company: "Porto Serra", email: "RH@Porto.com", phone: "27 99999-0000", theme: "Saúde Mental e NR-1",
+    event_date: addDays(todaySP(), 30), format: "presencial", place: "Serra/ES", audience: "200", budget: "R$ 3 mil a 5 mil", message: "SIPAT de março", elapsed: 9000 };
+  const r = await t.call("/api/indicacao", { method: "POST", body });
+  assert.equal(r.status, 200);
+  assert.equal(t.db.leads.length, 1);
+  assert.equal(t.db.leads[0].email, "rh@porto.com");
+  assert.equal(t.db.leads[0].audience, 200);
+  assert.ok(t.db.leads[0].ip_hash && t.db.leads[0].ip_hash.length === 64);
+  await tick();
+  const team = t.mails.find((m) => m.to[0] === t.env.NOTIFY_EMAIL);
+  assert.match(team.subject, /Pedido de indicação: Saúde Mental/);
+  assert.equal(team.reply_to, "rh@porto.com");
+  assert.ok(t.mails.find((m) => m.to[0] === "rh@porto.com"));
+  // robô: campo escondido preenchido → finge que deu certo e não grava
+  const r2 = await t.call("/api/indicacao", { method: "POST", body: { ...body, website: "http://spam" } });
+  assert.equal(r2.status, 200);
+  assert.equal(t.db.leads.length, 1);
+  // origem de outro site é barrada
+  const r3 = await t.call("/api/indicacao", { method: "POST", body, headers: { origin: "https://evil.example" } });
+  assert.equal(r3.status, 403);
+});
+
+test("indicação: campos obrigatórios e data no passado", () => {
+  assert.match(cleanLead({ company: "X Ltda", email: "a@b.co", theme: "x" }).error, /nome/);
+  assert.match(cleanLead({ name: "Ana", company: "X Ltda", email: "a@", theme: "x" }).error, /e-mail/);
+  assert.match(cleanLead({ name: "Ana", company: "X Ltda", email: "a@b.co" }).error, /tema/);
+  assert.match(cleanLead({ name: "Ana", company: "X Ltda", email: "a@b.co", theme: "x", event_date: "2020-01-01" }, "2026-11-19").error, /passou/);
+  assert.equal(cleanLead({ name: "Ana", company: "X Ltda", email: "a@b.co", theme: "x", format: "hack", audience: "-3" }).lead.format, null);
 });

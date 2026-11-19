@@ -902,3 +902,35 @@ alter table public.speakers add column if not exists profile_reminded_at timesta
 -- ---------- primeiro acesso da equipe ----------
 -- Depois de criar sua conta pelo app, rode (trocando o e-mail):
 --   update public.profiles set role = 'admin' where email = 'seu-email@exemplo.com';
+
+-- ---------- pedidos de indicação ("Nós indicamos", no site) ----------
+-- O site manda para /api/indicacao; o servidor grava aqui com a service_role. Só a equipe lê e atualiza.
+create table if not exists public.leads (
+  id          uuid primary key default gen_random_uuid(),
+  created_at  timestamptz not null default now(),
+  name        text not null check (char_length(name) between 2 and 120),
+  company     text not null check (char_length(company) between 2 and 160),
+  email       text not null check (char_length(email) between 5 and 200),
+  phone       text check (char_length(phone) <= 30),
+  theme       text not null check (char_length(theme) <= 80),
+  event_date  date,
+  place       text check (char_length(place) <= 120),
+  format      text check (format in ('presencial', 'online', 'indefinido')),
+  audience    int check (audience is null or audience between 1 and 100000),
+  budget      text check (char_length(budget) <= 40),
+  message     text check (char_length(message) <= 2000),
+  source      text check (char_length(source) <= 200),
+  ip_hash     text check (char_length(ip_hash) <= 64),
+  status      text not null default 'new' check (status in ('new', 'contacted', 'won', 'lost')),
+  notes       text check (char_length(notes) <= 2000),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists leads_created_idx on public.leads (created_at desc);
+create index if not exists leads_ip_idx on public.leads (ip_hash, created_at desc);
+alter table public.leads enable row level security;
+revoke all on public.leads from anon, authenticated;
+grant select, update (status, notes, updated_at) on public.leads to authenticated;
+drop policy if exists leads_admin_read on public.leads;
+create policy leads_admin_read on public.leads for select to authenticated using (public.is_admin());
+drop policy if exists leads_admin_update on public.leads;
+create policy leads_admin_update on public.leads for update to authenticated using (public.is_admin()) with check (public.is_admin());

@@ -174,7 +174,7 @@
         return '<div class="cb-col"><a class="cb-h" href="' + href("tema=" + encodeURIComponent(c.cat)) + '" data-cat="' + e(c.cat) + '">' + e(c.t) + "</a><ul role=\"list\">" +
           c.items.map(function (it) { return '<li><a href="' + href("q=" + encodeURIComponent(it.l)) + '" data-q="' + e(it.l) + '">' + e(it.l) + "</a></li>"; }).join("") + "</ul></div>";
       }).join("") + '<div class="cb-col cb-help"><b>Não achou o tema?</b><p>Conte o que o seu evento precisa e a nossa equipe indica palestrantes.</p>' +
-        (C.whatsapp ? '<a class="btn spot" target="_blank" rel="noopener" href="https://wa.me/' + e(C.whatsapp) + "?text=" + encodeURIComponent("Olá! Procuro um palestrante sobre " + g.n.toLowerCase() + " para o meu evento.") + '">Pedir indicação</a>' : "") +
+        '<a class="btn spot" href="/?indicar=' + encodeURIComponent(g.cols[0] ? g.cols[0].cat : "") + '#indicacao">Pedir indicação</a>' +
         "</div></div></div>";
       panel.hidden = false;
     }
@@ -282,6 +282,7 @@
     grid.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
     sb.from("categories").select("name").eq("active", true).order("sort").then(function (r) {
       cats = (r.data || []).map(function (c) { return c.name; });
+      leadThemes(cats);
       cats.forEach(function (c) { var o = document.createElement("option"); o.value = o.textContent = c; cat.appendChild(o); });
       var sp = new URLSearchParams(location.search), pre = sp.get("tema"), pq = sp.get("q");
       if (pre) { if (cats.indexOf(pre) > -1) cat.value = pre; else q.value = pre; }
@@ -355,5 +356,54 @@
     });
   }
 
-  document.addEventListener("DOMContentLoaded", function () { chrome(); catbar(); catalog(); profile(); });
+  // ---------- "Nós indicamos" ----------
+  function leadThemes(list) {
+    var sel = $("#lf-theme");
+    if (!sel || sel.options.length > 2) return;
+    var last = sel.options[1];
+    list.forEach(function (c) { var o = document.createElement("option"); o.textContent = c; sel.insertBefore(o, last); });
+    var pre = new URLSearchParams(location.search).get("indicar");
+    if (pre && list.indexOf(pre) > -1) sel.value = pre;
+  }
+  function leadForm() {
+    var f = $("#lead-form");
+    if (!f) return;
+    var F = f.elements, shown = Date.now(), msg = $("#lf-msg"), go = $("#lf-go");
+    var today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    F.event_date.min = today;
+    // tema vindo do link "Pedir indicação" do menu de temas (?indicar=Tema)
+    var pre = new URLSearchParams(location.search).get("indicar");
+    function preset() { if (pre) { var ok = [].some.call(F.theme.options, function (o) { return o.text === pre; }); if (ok) F.theme.value = pre; } }
+    preset();
+    function say(t, bad) { msg.textContent = t || ""; msg.className = "lf-msg" + (bad ? " err" : ""); }
+    f.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      [].forEach.call(f.querySelectorAll(".bad"), function (x) { x.classList.remove("bad"); });
+      var need = ["name", "company", "email", "theme"].filter(function (k) { return !F[k].value.trim(); });
+      if (!need.length && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(F.email.value.trim())) need = ["email"];
+      if (need.length) { need.forEach(function (k) { F[k].classList.add("bad"); }); F[need[0]].focus(); return say(need[0] === "email" && F.email.value ? "Confira o e-mail." : "Preencha os campos destacados.", true); }
+      var body = { elapsed: Date.now() - shown, source: (document.referrer || "").slice(0, 200) };
+      ["name", "company", "email", "phone", "theme", "event_date", "format", "place", "audience", "budget", "message", "website"].forEach(function (k) { body[k] = F[k].value; });
+      go.disabled = true; go.textContent = "Enviando…"; say("");
+      fetch("/api/indicacao", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || "Não foi possível enviar agora."); return d; }); })
+        .then(function () {
+          f.innerHTML = '<div class="lf-done"><h3>Pedido recebido! 🎤</h3><p>Nossa equipe vai responder em até 1 dia útil com sugestões de palestrantes para o seu evento.</p><p class="muted">Enviamos uma confirmação para o seu e-mail.</p>' +
+            (C.whatsapp ? '<a class="btn" target="_blank" rel="noopener" href="https://wa.me/' + e(C.whatsapp) + "?text=" + encodeURIComponent("Olá! Acabei de pedir uma indicação de palestrante pelo site.") + '">Falar no WhatsApp</a>' : "") + "</div>";
+          f.scrollIntoView({ block: "center" });
+        })
+        .catch(function (x) { go.disabled = false; go.textContent = "Quero indicações"; say(x.message || "Não foi possível enviar agora. Tente de novo ou fale pelo WhatsApp.", true); });
+    });
+  }
+
+  // Cloudflare Web Analytics (só nas páginas públicas; sem cookies)
+  function analytics() {
+    if (!/^[a-f0-9]{32}$/.test(C.cfBeacon || "")) return;
+    var s = document.createElement("script");
+    s.defer = true; s.src = "https://static.cloudflareinsights.com/beacon.min.js";
+    s.setAttribute("data-cf-beacon", JSON.stringify({ token: C.cfBeacon }));
+    document.head.appendChild(s);
+  }
+
+  document.addEventListener("DOMContentLoaded", function () { chrome(); catbar(); catalog(); profile(); leadForm(); analytics(); });
 })();
