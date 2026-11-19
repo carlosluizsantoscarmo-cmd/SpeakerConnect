@@ -741,7 +741,7 @@ async function contaDelete({ request, env }) {
 }
 
 // ---------- páginas públicas: prévia do perfil (WhatsApp/LinkedIn/Google) e sitemap ----------
-const SPEAKER_SEO_COLS = "id,public_name,headline,bio,city,uf,categories,photo_url,updated_at";
+const SPEAKER_SEO_COLS = "id,public_name,headline,bio,topics,city,uf,categories,formats,fee_from_cents,photo_url,updated_at";
 const escHtml = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const siteBase = (env) => String(env.SITE_URL || "https://speakerconnect.com.br").replace(/\/$/, "");
 
@@ -757,6 +757,62 @@ async function publicSpeakers(env, query) {
 function clip(t, n) {
   t = String(t || "").replace(/\s+/g, " ").trim();
   return t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : t;
+}
+
+async function notFoundPage(res) {
+  const html = (await res.text()).replace("</head>", '<meta name="robots" content="noindex">\n</head>');
+  const headers = new Headers(res.headers);
+  headers.delete("content-length"); headers.delete("etag");
+  headers.set("Cache-Control", "public, max-age=60");
+  return new Response(html, { status: 404, headers });
+}
+
+const brlPlain = (c) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const fmtLabelSrv = (f) => { f = Array.isArray(f) ? f : []; return f.length === 2 ? "Presencial e online" : f[0] === "online" ? "Online" : f[0] === "presencial" ? "Presencial" : "A combinar"; };
+// O texto do perfil já vem no HTML (o Google lê sem precisar rodar o site). O site.js redesenha a página igual ao carregar.
+export function speakerBody(html, s) {
+  const place = s.city ? s.city + (s.uf ? "/" + s.uf : "") : "";
+  const talks = String(s.topics || "").split(/\n+/).map((t) => t.replace(/^[\s•\-–*·\d.)]+/, "").trim()).filter(Boolean);
+  const photo = /^https:\/\/[^/]+\.supabase\.co\/storage\/v1\/object\/public\//.test(s.photo_url || "") ? s.photo_url : "";
+  const ask = "/app/#/novo-pedido?p=" + encodeURIComponent(s.id);
+  const body =
+    '<div class="prof-top"><div class="wrap"><div class="ph">' + (photo ? `<img src="${escHtml(photo)}" alt="Foto de ${escHtml(s.public_name)}">` : "") + "</div>" +
+    '<div><a class="back" href="/#palestrantes">← Todos os palestrantes</a><h1>' + escHtml(s.public_name) + "</h1>" +
+    (s.headline ? '<p class="hl">' + escHtml(s.headline) + "</p>" : "") +
+    '<div class="tags">' + (s.categories || []).map((c) => '<span class="tag">' + escHtml(c) + "</span>").join("") + "</div>" +
+    '<div class="facts"><span>Atende<b>' + escHtml(fmtLabelSrv(s.formats)) + "</b></span>" + (place ? "<span>Base<b>" + escHtml(place) + "</b></span>" : "") + "</div>" +
+    `<div class="cta"><a class="btn spot" href="${ask}">Pedir orçamento</a>` + (s.fee_from_cents ? '<span class="from">Palestras a partir de<b>' + brlPlain(s.fee_from_cents) + "</b></span>" : '<span class="from">Valor<b>sob consulta</b></span>') + "</div></div></div></div>" +
+    '<div class="prof-body"><div class="wrap"><div>' +
+    (s.bio ? '<div class="blk"><h2>Sobre</h2><div class="bio">' + escHtml(s.bio) + "</div></div>" : "") +
+    (talks.length ? '<div class="blk"><h2>Palestras</h2><div class="talks">' + talks.map((t) => '<div class="talk">' + escHtml(t) + "</div>").join("") + "</div></div>" : "") +
+    "</div></div></div>";
+  return html.replace(/<main id="prof">[\s\S]*?<\/main>/, () => '<main id="prof">' + body + "</main>");
+}
+
+// Página inicial: a lista de palestrantes já vem no HTML, com links para cada perfil (o site.js redesenha depois).
+export function homeGrid(html, rows) {
+  const cards = rows.filter((s) => UUID.test(s.id || "") && s.public_name).map((s) => {
+    const place = s.city ? s.city + (s.uf ? "/" + s.uf : "") : "";
+    return `<a class="sp" href="/palestrante?id=${s.id}"><div class="bd"><h3>${escHtml(s.public_name)}</h3>` +
+      (s.headline ? `<p class="hl">${escHtml(clip(s.headline, 160))}</p>` : "") +
+      ((s.categories || []).length ? '<div class="tags">' + s.categories.slice(0, 2).map((c) => '<span class="tag">' + escHtml(c) + "</span>").join("") + "</div>" : "") +
+      `<div class="where">${escHtml((place ? place + " · " : "") + fmtLabelSrv(s.formats))}</div><div class="foot"><span class="go">Ver perfil</span></div></div></a>`;
+  }).join("");
+  if (!cards) return html;
+  return html.replace(/<div class="grid" id="grid"([^>]*)><\/div>/, (m, a) => `<div class="grid" id="grid"${a}>${cards}</div>`);
+}
+
+async function homePage(request, env) {
+  const res = await env.ASSETS.fetch(request);
+  if (!res.ok || !/text\/html/.test(res.headers.get("content-type") || "") || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return res;
+  let rows;
+  try { rows = await publicSpeakers(env, "select=id,public_name,headline,city,uf,categories,formats&status=eq.approved&order=verified_until.desc.nullslast,updated_at.desc&limit=60"); }
+  catch (e) { console.error("home: lista falhou:", e && e.message); return res; }
+  const html = homeGrid(await res.text(), Array.isArray(rows) ? rows : []);
+  const headers = new Headers(res.headers);
+  headers.delete("content-length"); headers.delete("etag");
+  headers.set("Cache-Control", "public, max-age=300");
+  return new Response(html, { status: 200, headers });
 }
 
 export function speakerMeta(html, s, pageUrl, env) {
@@ -791,12 +847,14 @@ async function profilePage(request, env) {
   if (url.pathname.endsWith(".html")) return new Response(null, { status: 301, headers: { Location: "/palestrante" + url.search } });
   const res = await env.ASSETS.fetch(request);
   const id = url.searchParams.get("id") || "";
-  if (!res.ok || !/text\/html/.test(res.headers.get("content-type") || "") || !UUID.test(id) || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return res;
+  if (!res.ok || !/text\/html/.test(res.headers.get("content-type") || "") || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return res;
+  if (!UUID.test(id)) return notFoundPage(res);
   let s = null;
   try { s = (await publicSpeakers(env, `select=${SPEAKER_SEO_COLS}&id=eq.${id}&status=eq.approved&limit=1`))[0] || null; }
-  catch (e) { console.error("perfil: prévia falhou:", e && e.message); }
-  if (!s || !s.public_name) return res;
-  const html = speakerMeta(await res.text(), s, siteBase(env) + url.pathname + "?id=" + id, env);
+  catch (e) { console.error("perfil: prévia falhou:", e && e.message); return res; }
+  // Perfil que não existe (ou saiu do ar): 404 de verdade, para o Google não guardar uma página vazia ("soft 404").
+  if (!s || !s.public_name) return notFoundPage(res);
+  const html = speakerBody(speakerMeta(await res.text(), s, siteBase(env) + url.pathname + "?id=" + id, env), s);
   const headers = new Headers(res.headers);
   headers.delete("content-length"); headers.delete("etag");
   headers.set("Cache-Control", "public, max-age=300");
@@ -1034,6 +1092,9 @@ export default {
       try { return await profilePage(request, env); } catch (e) { console.error("perfil falhou:", e && e.message); return env.ASSETS.fetch(request); }
     }
     if (pathname === "/sitemap.xml") return sitemap(request, env);
+    if (pathname === "/" && request.method === "GET") {
+      try { return await homePage(request, env); } catch (e) { console.error("home falhou:", e && e.message); return env.ASSETS.fetch(request); }
+    }
     return env.ASSETS.fetch(request);
   },
   // Agendador do Cloudflare (ver "triggers" no wrangler.jsonc): lembretes diários de perfil incompleto.

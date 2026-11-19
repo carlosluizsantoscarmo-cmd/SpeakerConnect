@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import worker from "../worker.js";
 
 const ID = "a0000000-0000-4000-8000-000000000001";
-const PAGE = '<!doctype html><html><head><title>Palestrante | SpeakerConnect</title>\n<meta name="description" content="Perfil genérico"></head><body></body></html>';
+const PAGE = '<!doctype html><html><head><title>Palestrante | SpeakerConnect</title>\n<meta name="description" content="Perfil genérico"></head><body><main id="prof"><div class="skel"></div></main><div class="grid" id="grid" aria-live="polite"></div></body></html>';
 function env(rows, opts = {}) {
   const calls = [];
   globalThis.fetch = async (u, init) => {
@@ -43,12 +43,45 @@ test("foto de fora do Supabase usa a imagem padrão", async () => {
   assert.match(h, /og:image" content="https:\/\/speakerconnect\.com\.br\/og\.png"/);
 });
 
-test("perfil inexistente, id inválido ou erro no banco: página original", async () => {
-  for (const [rows, path, fail] of [[[], "/palestrante?id=" + ID], [[], "/palestrante?id=abc"], [[], "/palestrante?id=" + ID, true]]) {
-    const { env: e } = env(rows, { fail });
-    const h = await (await get(path, e)).text();
-    assert.equal(h, PAGE);
+test("perfil inexistente ou id inválido: 404 de verdade e noindex", async () => {
+  for (const path of ["/palestrante?id=" + ID, "/palestrante?id=abc", "/palestrante"]) {
+    const { env: e } = env([]);
+    const r = await get(path, e);
+    assert.equal(r.status, 404, path);
+    assert.match(await r.text(), /<meta name="robots" content="noindex">/);
   }
+});
+
+test("erro no banco: página original (não marca como 404)", async () => {
+  const { env: e } = env([], { fail: true });
+  const r = await get("/palestrante?id=" + ID, e);
+  assert.equal(r.status, 200);
+  assert.equal(await r.text(), PAGE);
+});
+
+test("o texto do perfil já vem no HTML (apresentação, palestras, valor)", async () => {
+  const { env: e } = env([{ id: ID, public_name: "Ana", headline: "Segurança", bio: "Sou engenheira <b>de</b> segurança.", topics: "1. NR-1 na prática\n2. Cultura de segurança",
+    categories: ["SIPAT"], formats: ["presencial", "online"], fee_from_cents: 150000, city: "Serra", uf: "ES" }]);
+  const h = await (await get("/palestrante?id=" + ID, e)).text();
+  assert.match(h, /<main id="prof"><div class="prof-top">/);
+  assert.match(h, /<h1>Ana<\/h1>/);
+  assert.match(h, /Sou engenheira &lt;b&gt;de&lt;\/b&gt; segurança\./);
+  assert.match(h, /<div class="talk">NR-1 na prática<\/div><div class="talk">Cultura de segurança<\/div>/);
+  assert.match(h, /R\$\s1\.500,00/);
+  assert.match(h, /Presencial e online/);
+  assert.doesNotMatch(h, /class="skel"/);
+});
+
+test("página inicial já traz os links dos perfis aprovados", async () => {
+  const { env: e, calls } = env([{ id: ID, public_name: "Ana <R>", headline: "Segurança", categories: ["SIPAT"], city: "Serra", uf: "ES", formats: ["online"] }, { id: "x", public_name: "Sem id" }]);
+  const r = await get("/", e);
+  const h = await r.text();
+  assert.equal(r.status, 200);
+  assert.match(h, new RegExp(`<a class="sp" href="/palestrante\\?id=${ID}"><div class="bd"><h3>Ana &lt;R&gt;</h3>`));
+  assert.doesNotMatch(h, /Sem id/);
+  assert.match(calls[0].u, /status=eq\.approved/);
+  const { env: e2 } = env([], { fail: true });
+  assert.equal(await (await get("/", e2)).text(), PAGE, "banco fora: página original");
 });
 
 test("endereço antigo .html redireciona mantendo o id", async () => {
