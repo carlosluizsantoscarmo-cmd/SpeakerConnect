@@ -4,7 +4,13 @@
   var C = window.SC || {};
   var ready = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(C.supabaseUrl || "") && C.supabaseKey && !/COLE_AQUI/.test(C.supabaseKey);
   var sb = ready && window.supabase ? window.supabase.createClient(C.supabaseUrl, C.supabaseKey, { auth: { persistSession: false } }) : null;
-  var COLS = "id,public_name,headline,bio,topics,categories,city,uf,formats,fee_from_cents,photo_url,video_url,verified_until";
+  var COLS = "id,public_name,headline,bio,topics,categories,city,uf,formats,fee_from_cents,photo_url,video_url,verified_until,invoice";
+  // Endereço do perfil com o nome: /palestrante/mirella-leao-b3802277 (os 8 primeiros caracteres do id). Igual ao worker.js.
+  function slugify(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "palestrante"; }
+  function spUrl(s) { return "/palestrante/" + slugify(s.public_name) + "-" + String(s.id).slice(0, 8); }
+  function emitsNF(s) { return s.invoice === "cnpj" || s.invoice === "mei"; }
+  window.SCsite = window.SCsite || {};
+  window.SCsite.spUrl = spUrl;
 
   function e(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function brl(c) { return "R$ " + (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
@@ -49,7 +55,7 @@
     if (f) {
       f.innerHTML = '<div class="wrap"><div><a class="logo" href="/">' + MIC + "SpeakerConnect</a>" +
         '<p class="small" style="margin-top:10px;max-width:38ch">Palestrantes para eventos corporativos, SIPAT, convenções e treinamentos, com orçamento e pagamento pela plataforma.</p></div>' +
-        '<div><nav aria-label="Rodapé"><a href="/sobre">Quem somos</a><a href="/entidades">Para entidades</a><a href="/termos.html">Termos de uso</a><a href="/privacidade.html">Privacidade</a><a href="/app/">Entrar</a></nav>' +
+        '<div><nav aria-label="Rodapé"><a href="/sobre">Quem somos</a><a href="/palestras">Temas</a><a href="/campanhas">Campanhas</a><a href="/entidades">Para entidades</a><a href="/termos.html">Termos de uso</a><a href="/privacidade.html">Privacidade</a><a href="/app/">Entrar</a></nav>' +
         (C.email ? '<p class="small" style="margin-top:12px">Contato: <a href="mailto:' + e(C.email) + '">' + e(C.email) + "</a></p>" : "") +
         socialLinks() +
         '<p class="small">© ' + new Date().getFullYear() + " SpeakerConnect · CNPJ 46.090.377/0001-80 · Serra/ES</p></div></div>";
@@ -206,13 +212,13 @@
     var photo = safeUrl(s.photo_url);
     var cats = (s.categories || []).slice(0, 2).map(function (c) { return '<span class="tag">' + e(c) + "</span>"; }).join("");
     var place = [s.city, s.uf].filter(Boolean).join("/");
-    return '<a class="sp" href="/palestrante?id=' + e(s.id) + '" aria-label="' + e(s.public_name) + (verified(s) ? ", palestrante verificado" : "") + '">' +
+    return '<a class="sp" href="' + e(spUrl(s)) + '" aria-label="' + e(s.public_name) + (verified(s) ? ", palestrante verificado" : "") + '">' +
       '<div class="ph">' + (photo ? '<img src="' + e(photo) + '" alt="" loading="lazy">' : '<div class="mono" aria-hidden="true">' + e(initials(s.public_name)) + "</div>") +
       (verified(s) ? '<span class="badge vchip">' + CHECK.replace('class="verified-ic"', 'style="color:var(--stage)"') + "<span>Verificado</span></span>" : "") + "</div>" +
       '<div class="bd"><h3>' + e(s.public_name) + "</h3>" +
       (s.headline ? '<p class="hl">' + e(s.headline) + "</p>" : "") +
       (cats ? '<div class="tags">' + cats + "</div>" : "") +
-      '<div class="where">' + svg("pin", 16) + e((place ? place + " · " : "") + fmtLabel(s)) + "</div>" +
+      '<div class="where">' + svg("pin", 16) + e((place ? place + " · " : "") + fmtLabel(s)) + (emitsNF(s) ? '<span class="nf">Emite NF</span>' : "") + "</div>" +
       '<div class="foot"><span class="fee">' + (s.fee_from_cents ? "a partir de<b>" + brl(s.fee_from_cents) + "</b>" : "valor sob consulta") + '</span><span class="go">Ver perfil</span></div></div></a>';
   }
 
@@ -221,7 +227,7 @@
   function catalog() {
     var grid = $("#grid");
     if (!grid) return;
-    var q = $("#f-q"), cat = $("#f-cat"), uf = $("#f-uf"), fmt = $("#f-fmt"), cats = [];
+    var q = $("#f-q"), cat = $("#f-cat"), uf = $("#f-uf"), fmt = $("#f-fmt"), nf = $("#f-nf") || { value: "", addEventListener: function () {} }, cats = [];
     function themes() {
       var box = $("#themes");
       if (!box || !cats.length) return;
@@ -248,6 +254,7 @@
         if (c && (s.categories || []).indexOf(c) < 0) return false;
         if (u && s.uf !== u) return false;
         if (f && (s.formats || []).indexOf(f) < 0) return false;
+        if (nf.value && !emitsNF(s)) return false;
         if (t) {
           var hay = " " + norm([s.public_name, s.headline, s.topics, s.bio, (s.categories || []).join(" "), s.city].join(" ")) + " ";
           if (!terms.some(function (k) { return hay.indexOf(k) > -1; })) return false;
@@ -256,7 +263,8 @@
       });
       themes();
       var want = q.value || c;
-      var wa = C.whatsapp && want ? '<a class="btn spot" target="_blank" rel="noopener" href="https://wa.me/' + e(C.whatsapp) + "?text=" + encodeURIComponent("Olá! Procuro um palestrante sobre " + want + " para o meu evento.") + '">Pedir indicação à equipe</a>' : "";
+      // Sem resultado: leva para o formulário "A gente indica", já com o tema escolhido
+      var wa = want || nf.value ? '<a class="btn spot" href="#indicacao" id="ask-rec">Pedir indicação à equipe</a>' : "";
       if (!all.length) {
         grid.innerHTML = '<div class="empty"><h3>Os primeiros palestrantes estão chegando</h3><p class="muted">Estamos aprovando os perfis.' + (want ? " Enquanto isso, nossa equipe indica um palestrante sobre " + e(want) + " para o seu evento." : " Se você é palestrante, crie sua conta e saia na frente.") + '</p><div class="row-btns">' + wa + '<a class="btn' + (wa ? " line" : "") + '" href="/app/#/cadastro?tipo=palestrante">Quero ser palestrante</a></div></div>';
         return;
@@ -264,9 +272,18 @@
       grid.innerHTML = list.length ? list.map(card).join("") :
         '<div class="empty"><h3>Nenhum palestrante com esses filtros</h3><p class="muted">' + (want ? "Ainda não temos perfis publicados sobre " + e(want) + ". Nossa equipe pode indicar um palestrante para o seu evento." : "Tente outro tema ou tire o filtro de estado.") + '</p><div class="row-btns">' + wa + '<button class="btn line" type="button" id="clear">Limpar filtros</button></div></div>';
       var cl = $("#clear");
-      if (cl) cl.onclick = function () { q.value = ""; cat.value = ""; uf.value = ""; fmt.value = ""; apply(); };
+      if (cl) cl.onclick = function () { q.value = ""; cat.value = ""; uf.value = ""; fmt.value = ""; nf.value = ""; apply(); };
+      var ar = $("#ask-rec");
+      if (ar) ar.onclick = function () {
+        var f = $("#lead-form");
+        if (!f) return;
+        var th = f.elements.theme;
+        if (c && [].some.call(th.options, function (o) { return o.text === c; })) th.value = c;
+        else if (q.value && f.elements.message && !f.elements.message.value) f.elements.message.value = "Procuro um palestrante sobre: " + q.value;
+        setTimeout(function () { f.elements.name.focus({ preventScroll: true }); }, 400);
+      };
     }
-    [q, cat, uf, fmt].forEach(function (el) { el.addEventListener("input", apply); });
+    [q, cat, uf, fmt, nf].forEach(function (el) { el.addEventListener("input", apply); });
     window.SCsite.filter = function (text, theme) {
       q.value = text || ""; cat.value = theme && cats.indexOf(theme) > -1 ? theme : "";
       if (theme && !cat.value) q.value = theme;
@@ -323,11 +340,13 @@
     var root = $("#prof");
     if (!root) return;
     var id = new URLSearchParams(location.search).get("id") || "";
+    var short = (location.pathname.match(/^\/palestrante\/[a-z0-9-]*?([0-9a-f]{8})\/?$/) || [])[1];
     function missing(msg) { root.innerHTML = '<section><div class="wrap"><div class="empty"><h3>' + e(msg) + '</h3><a class="btn" href="/#palestrantes">Ver palestrantes</a></div></div></section>'; }
-    if (!/^[0-9a-f-]{36}$/.test(id)) return missing("Palestrante não encontrado");
+    if (!/^[0-9a-f-]{36}$/.test(id) && !short) return missing("Palestrante não encontrado");
     if (!sb) return missing("O site ainda não foi ligado ao banco de dados");
-    sb.from("speakers").select(COLS).eq("id", id).eq("status", "approved").maybeSingle().then(function (r) {
-      var s = r.data;
+    var qy = sb.from("speakers").select(COLS).eq("status", "approved");
+    (short ? qy.eq("id_short", short).limit(1) : qy.eq("id", id).limit(1)).then(function (r) {
+      var s = (r.data || [])[0];
       if (!s) return missing("Este perfil não está disponível");
       document.title = s.public_name + " | SpeakerConnect";
       var d = document.querySelector('meta[name="description"]'); if (d) d.setAttribute("content", (s.headline || "Palestrante") + " — peça um orçamento pelo SpeakerConnect.");
@@ -342,7 +361,8 @@
         "<h1>" + e(s.public_name) + "</h1>" + (verified(s) ? '<p style="margin:14px 0 0"><span class="badge">' + CHECK.replace('class="verified-ic"', 'style="color:var(--stage)"') + "Palestrante verificado</span></p>" : "") +
         (s.headline ? '<p class="hl">' + e(s.headline) + "</p>" : "") +
         '<div class="tags">' + (s.categories || []).map(function (c) { return '<span class="tag">' + e(c) + "</span>"; }).join("") + "</div>" +
-        '<div class="facts"><span>Atende<b>' + e(fmtLabel(s)) + "</b></span>" + (s.city ? "<span>Base<b>" + e(s.city + (s.uf ? "/" + s.uf : "")) + "</b></span>" : "") + (links ? "<span>Redes<b>" + links + "</b></span>" : "") + "</div>" +
+        '<div class="facts"><span>Atende<b>' + e(fmtLabel(s)) + "</b></span>" + (s.city ? "<span>Base<b>" + e(s.city + (s.uf ? "/" + s.uf : "")) + "</b></span>" : "") + (links ? "<span>Redes<b>" + links + "</b></span>" : "") +
+        (s.invoice ? "<span>Nota fiscal<b>" + (emitsNF(s) ? "Emite NF" : "Recibo de autônomo (RPA)") + "</b></span>" : "") + "</div>" +
         '<div class="cta"><a class="btn spot" href="' + ask + '">Pedir orçamento</a>' + from + "</div></div></div></div>" +
         '<div class="prof-body"><div class="wrap"><div>' +
         (vid ? '<div class="blk"><h2>Veja em ação</h2><div class="video"><iframe src="' + e(vid) + '" title="Vídeo de ' + e(s.public_name) + '" allow="encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe></div></div>' : "") +

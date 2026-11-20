@@ -741,16 +741,20 @@ async function contaDelete({ request, env }) {
 }
 
 // ---------- páginas públicas: prévia do perfil (WhatsApp/LinkedIn/Google) e sitemap ----------
-const SPEAKER_SEO_COLS = "id,public_name,headline,bio,topics,city,uf,categories,formats,fee_from_cents,photo_url,updated_at";
+const SPEAKER_SEO_COLS = "id,public_name,headline,bio,topics,city,uf,categories,formats,fee_from_cents,photo_url,updated_at,invoice";
+// Endereço do perfil com o nome: /palestrante/mirella-leao-b3802277 (8 primeiros caracteres do id). Igual ao site.js.
+export const slugify = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "palestrante";
+export const spPath = (s) => "/palestrante/" + slugify(s.public_name) + "-" + String(s.id).slice(0, 8);
+const PRETTY = /^\/palestrante\/([a-z0-9-]*?)-?([0-9a-f]{8})\/?$/;
 const escHtml = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const siteBase = (env) => String(env.SITE_URL || "https://speakerconnect.com.br").replace(/\/$/, "");
 
 // Lê só dados públicos, com a chave pública: as regras do banco valem (apenas perfis aprovados).
-async function publicSpeakers(env, query) {
-  const r = await fetch(env.SUPABASE_URL.replace(/\/$/, "") + "/rest/v1/speakers?" + query, {
+async function publicSpeakers(env, query, table = "speakers") {
+  const r = await fetch(env.SUPABASE_URL.replace(/\/$/, "") + `/rest/v1/${table}?` + query, {
     headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: "Bearer " + env.SUPABASE_ANON_KEY },
   });
-  if (!r.ok) throw new Error("speakers " + r.status);
+  if (!r.ok) throw new Error(table + " " + r.status);
   return r.json();
 }
 
@@ -780,7 +784,8 @@ export function speakerBody(html, s) {
     '<div><a class="back" href="/#palestrantes">← Todos os palestrantes</a><h1>' + escHtml(s.public_name) + "</h1>" +
     (s.headline ? '<p class="hl">' + escHtml(s.headline) + "</p>" : "") +
     '<div class="tags">' + (s.categories || []).map((c) => '<span class="tag">' + escHtml(c) + "</span>").join("") + "</div>" +
-    '<div class="facts"><span>Atende<b>' + escHtml(fmtLabelSrv(s.formats)) + "</b></span>" + (place ? "<span>Base<b>" + escHtml(place) + "</b></span>" : "") + "</div>" +
+    '<div class="facts"><span>Atende<b>' + escHtml(fmtLabelSrv(s.formats)) + "</b></span>" + (place ? "<span>Base<b>" + escHtml(place) + "</b></span>" : "") +
+    (s.invoice ? "<span>Nota fiscal<b>" + (s.invoice === "rpa" ? "Recibo de autônomo (RPA)" : "Emite NF") + "</b></span>" : "") + "</div>" +
     `<div class="cta"><a class="btn spot" href="${ask}">Pedir orçamento</a>` + (s.fee_from_cents ? '<span class="from">Palestras a partir de<b>' + brlPlain(s.fee_from_cents) + "</b></span>" : '<span class="from">Valor<b>sob consulta</b></span>') + "</div></div></div></div>" +
     '<div class="prof-body"><div class="wrap"><div>' +
     (s.bio ? '<div class="blk"><h2>Sobre</h2><div class="bio">' + escHtml(s.bio) + "</div></div>" : "") +
@@ -793,13 +798,124 @@ export function speakerBody(html, s) {
 export function homeGrid(html, rows) {
   const cards = rows.filter((s) => UUID.test(s.id || "") && s.public_name).map((s) => {
     const place = s.city ? s.city + (s.uf ? "/" + s.uf : "") : "";
-    return `<a class="sp" href="/palestrante?id=${s.id}"><div class="bd"><h3>${escHtml(s.public_name)}</h3>` +
+    return `<a class="sp" href="${spPath(s)}"><div class="bd"><h3>${escHtml(s.public_name)}</h3>` +
       (s.headline ? `<p class="hl">${escHtml(clip(s.headline, 160))}</p>` : "") +
       ((s.categories || []).length ? '<div class="tags">' + s.categories.slice(0, 2).map((c) => '<span class="tag">' + escHtml(c) + "</span>").join("") + "</div>" : "") +
       `<div class="where">${escHtml((place ? place + " · " : "") + fmtLabelSrv(s.formats))}</div><div class="foot"><span class="go">Ver perfil</span></div></div></a>`;
   }).join("");
   if (!cards) return html;
   return html.replace(/<div class="grid" id="grid"([^>]*)><\/div>/, (m, a) => `<div class="grid" id="grid"${a}>${cards}</div>`);
+}
+
+// ---------- páginas por tema (/palestras, /palestras/<tema>) e calendário (/campanhas) ----------
+// Tudo vem pronto no HTML, para o Google ler. O site.js só cuida do menu e do rodapé.
+export const THEME_INTRO = {
+  "Liderança": "Palestras para formar líderes que engajam, dão feedback e desenvolvem pessoas. Ideais para encontros de gestores, programas de liderança e convenções.",
+  "Motivacional": "Palestras que renovam a energia das equipes, com histórias reais e mensagens que ficam. Boas para abertura de eventos, convenções e fim de ano.",
+  "Vendas": "Palestras para times comerciais venderem mais e melhor: atendimento, negociação, performance e experiência do cliente.",
+  "Gestão de Pessoas e RH": "Palestras sobre cultura, clima, comunicação, carreira e desenvolvimento humano, para semanas de RH e programas de treinamento.",
+  "Saúde e Bem-Estar": "Palestras sobre qualidade de vida, alimentação, ergonomia e prevenção, muito procuradas em SIPATs e campanhas de saúde.",
+  "Saúde Mental": "Palestras sobre saúde mental no trabalho, estresse, ansiedade e riscos psicossociais (NR-1), para SIPAT, Janeiro Branco e Setembro Amarelo.",
+  "Segurança do Trabalho e SIPAT": "Palestras para SIPAT e para a cultura de segurança: prevenção de acidentes, percepção de risco, NR-1 e comportamento seguro.",
+  "Direito": "Palestras sobre direitos, deveres e temas jurídicos do dia a dia das empresas e dos colaboradores.",
+  "Tecnologia e Inovação": "Palestras sobre inteligência artificial, transformação digital, automação e inovação aplicada aos negócios.",
+  "Empreendedorismo": "Palestras para quem quer empreender ou inovar dentro da empresa: planejamento, carreira empreendedora e novos negócios.",
+  "Marketing": "Palestras sobre marca, presença digital, conteúdo e estratégias para atrair e fidelizar clientes.",
+  "Finanças": "Palestras de educação financeira para colaboradores e de gestão financeira para empresas.",
+  "Meio Ambiente e ESG": "Palestras sobre sustentabilidade, ESG e responsabilidade socioambiental, para semanas do meio ambiente e programas corporativos.",
+  "Diversidade e Inclusão": "Palestras sobre diversidade, inclusão, respeito e combate ao assédio, para ambientes de trabalho mais saudáveis.",
+  "Comunicação e Oratória": "Palestras sobre comunicação assertiva, comunicação não violenta, oratória e relacionamento entre equipes.",
+  "Educação": "Palestras para escolas, educadores e programas educacionais dentro e fora das empresas.",
+};
+export const CAMPAIGNS = [
+  ["Janeiro", "Janeiro Branco", "Mês da saúde mental e emocional.", ["Saúde Mental"]],
+  ["Março", "Mês da Mulher", "Liderança feminina, carreira, respeito e equidade.", ["Diversidade e Inclusão", "Liderança"]],
+  ["Abril", "Abril Verde", "Mês da saúde e da segurança no trabalho.", ["Segurança do Trabalho e SIPAT", "Saúde e Bem-Estar"]],
+  ["Maio", "Maio Amarelo", "Segurança no trânsito, inclusive no trajeto para o trabalho.", ["Segurança do Trabalho e SIPAT"]],
+  ["Junho", "Semana do Meio Ambiente", "Sustentabilidade, ESG e consumo consciente.", ["Meio Ambiente e ESG"]],
+  ["Agosto", "Agosto Lilás", "Conscientização e combate à violência contra a mulher.", ["Diversidade e Inclusão"]],
+  ["Setembro", "Setembro Amarelo", "Prevenção e valorização da vida.", ["Saúde Mental"]],
+  ["Outubro", "Outubro Rosa", "Prevenção do câncer de mama e saúde da mulher.", ["Saúde e Bem-Estar"]],
+  ["Novembro", "Novembro Azul", "Prevenção do câncer de próstata e saúde do homem.", ["Saúde e Bem-Estar"]],
+  ["Dezembro", "Encerramento e planejamento", "Reconhecimento, motivação e metas para o novo ano.", ["Motivacional", "Liderança"]],
+  ["O ano todo", "SIPAT", "Semana Interna de Prevenção de Acidentes, com temas de segurança, saúde e bem-estar.", ["Segurança do Trabalho e SIPAT", "Saúde Mental", "Saúde e Bem-Estar"]],
+];
+const themeTitle = (c) => /SIPAT|Liderança|Vendas|Marketing|Finanças|Educação|Direito|Empreendedorismo/.test(c) ? "Palestras de " + c : "Palestras sobre " + c;
+
+function spCard(s) {
+  const photo = /^https:\/\/[^/]+\.supabase\.co\/storage\/v1\/object\/public\//.test(s.photo_url || "") ? s.photo_url : "";
+  const place = s.city ? s.city + (s.uf ? "/" + s.uf : "") : "";
+  const ini = String(s.public_name || "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+  return `<a class="sp" href="${spPath(s)}"><div class="ph">` + (photo ? `<img src="${escHtml(photo)}" alt="" loading="lazy">` : `<div class="mono" aria-hidden="true">${escHtml(ini)}</div>`) + "</div>" +
+    `<div class="bd"><h3>${escHtml(s.public_name)}</h3>` + (s.headline ? `<p class="hl">${escHtml(clip(s.headline, 160))}</p>` : "") +
+    ((s.categories || []).length ? '<div class="tags">' + s.categories.slice(0, 2).map((c) => '<span class="tag">' + escHtml(c) + "</span>").join("") + "</div>" : "") +
+    `<div class="where">${escHtml((place ? place + " · " : "") + fmtLabelSrv(s.formats))}` + (s.invoice === "cnpj" || s.invoice === "mei" ? '<span class="nf">Emite NF</span>' : "") + "</div>" +
+    `<div class="foot"><span class="fee">${s.fee_from_cents ? "a partir de<b>" + brlPlain(s.fee_from_cents) + "</b>" : "valor sob consulta"}</span><span class="go">Ver perfil</span></div></div></a>`;
+}
+
+export function themeHtml(kind, cats, rows, theme) {
+  const count = {};
+  rows.forEach((s) => (s.categories || []).forEach((c) => { count[c] = (count[c] || 0) + 1; }));
+  const rec = (c) => `/?indicar=${encodeURIComponent(c)}#indicacao`;
+  const hero = (eb, h1, lead) => `<section class="ab-hero"><div class="wrap"><p class="ab-eb">${eb}</p><h1>${h1}</h1><p class="ab-lead">${lead}</p></div></section>`;
+  if (kind === "index") {
+    return hero("Temas", "Palestras para cada <span>momento da empresa</span>", "Escolha o tema e veja os palestrantes. Pedir orçamento é grátis e sem compromisso.") +
+      '<section class="tm-list"><div class="wrap"><ul class="tm-grid" role="list">' + cats.map((c) =>
+        `<li><a href="/palestras/${slugify(c)}"><b>${escHtml(c)}</b><span>${count[c] ? count[c] + (count[c] === 1 ? " palestrante" : " palestrantes") : "Indicação da equipe"}</span></a></li>`).join("") +
+      '</ul><p class="tm-more">Planejando o ano? Veja o <a href="/campanhas">calendário de campanhas</a> com sugestões de palestras para cada mês.</p></div></section>' + recCta();
+  }
+  if (kind === "campanhas") {
+    return hero("Calendário", "Campanhas do ano e <span>palestras para cada mês</span>", "Janeiro Branco, Abril Verde, Maio Amarelo, Setembro Amarelo, Outubro Rosa, Novembro Azul e SIPAT: planeje as palestras da sua empresa com antecedência.") +
+      '<section class="tm-cal"><div class="wrap"><ol class="cal" role="list">' + CAMPAIGNS.map(([m, n, d, ts]) => {
+        const sp = rows.filter((s) => (s.categories || []).some((c) => ts.includes(c))).slice(0, 3);
+        return `<li><p class="cal-m">${escHtml(m)}</p><h2>${escHtml(n)}</h2><p>${escHtml(d)}</p><div class="cal-t">` +
+          ts.filter((t) => cats.includes(t)).map((t) => `<a href="/palestras/${slugify(t)}">${escHtml(t)}</a>`).join("") + "</div>" +
+          (sp.length ? '<p class="cal-sp">Palestrantes: ' + sp.map((s) => `<a href="${spPath(s)}">${escHtml(s.public_name)}</a>`).join(", ") + "</p>" : "") + "</li>";
+      }).join("") + "</ol></div></section>" + recCta();
+  }
+  const list = rows.filter((s) => (s.categories || []).includes(theme));
+  const camp = CAMPAIGNS.filter((c) => c[3].includes(theme));
+  return hero("Tema", escHtml(themeTitle(theme)), escHtml(THEME_INTRO[theme] || "Encontre palestrantes sobre " + theme + " para o seu evento. Pedir orçamento é grátis e sem compromisso.")) +
+    '<section class="tm-sp"><div class="wrap"><div class="sec-head"><div><h2>' + (list.length ? list.length + (list.length === 1 ? " palestrante" : " palestrantes") + " neste tema" : "Ainda sem perfis publicados neste tema") + "</h2>" +
+    '<p class="muted">Perfis revisados pela nossa equipe. Presencial e online.</p></div></div>' +
+    (list.length ? '<div class="grid">' + list.map(spCard).join("") + "</div>"
+      : `<div class="empty"><h3>A gente indica um palestrante para você</h3><p class="muted">Conte como é o seu evento e a nossa equipe sugere nomes em até 1 dia útil.</p><a class="btn spot" href="${rec(theme)}">Pedir indicação</a></div>`) +
+    (camp.length ? '<p class="tm-more">Campanhas ligadas a este tema: ' + camp.map((c) => `<b>${escHtml(c[1])}</b> (${escHtml(c[0].toLowerCase())})`).join(", ") + '. Veja o <a href="/campanhas">calendário completo</a>.</p>' : "") +
+    '<p class="tm-more">Outros temas: ' + cats.filter((c) => c !== theme).slice(0, 8).map((c) => `<a href="/palestras/${slugify(c)}">${escHtml(c)}</a>`).join(" · ") + ' · <a href="/palestras">todos</a></p>' +
+    "</div></section>" + recCta(theme);
+  function recCta(t) {
+    return `<section class="ab-cta"><div class="wrap"><h2>Não sabe qual palestrante escolher?</h2><p style="color:#CFCDEB;margin:0 0 18px">A nossa equipe indica 2 ou 3 nomes em até 1 dia útil, sem custo.</p>` +
+      `<div class="ab-btns"><a class="btn spot" href="${t ? rec(t) : "/#indicacao"}">Pedir indicação</a><a class="btn ghost" href="/#palestrantes">Ver todos os palestrantes</a></div></div></section>`;
+  }
+}
+
+async function themePages(request, env) {
+  const url = new URL(request.url), base = siteBase(env);
+  const res = await env.ASSETS.fetch(new Request(new URL("/tema", url), request));
+  if (!res.ok || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return res;
+  const [cats, rows] = await Promise.all([
+    publicSpeakers(env, "select=name&active=eq.true&order=sort", "categories").then((r) => r.map((c) => c.name).filter(Boolean)),
+    publicSpeakers(env, "select=id,public_name,headline,city,uf,categories,formats,fee_from_cents,photo_url,invoice,verified_until&status=eq.approved&order=verified_until.desc.nullslast,updated_at.desc&limit=500"),
+  ]);
+  let kind = "index", theme = null, title = "Palestras por tema | SpeakerConnect", desc = "Palestras de liderança, saúde mental e NR-1, SIPAT, vendas, gestão de pessoas e mais. Veja os palestrantes e peça orçamento sem custo.";
+  if (url.pathname === "/campanhas") {
+    kind = "campanhas"; title = "Calendário de campanhas: palestras para cada mês | SpeakerConnect";
+    desc = "Janeiro Branco, Abril Verde, Maio Amarelo, Setembro Amarelo, Outubro Rosa, Novembro Azul e SIPAT: palestras e palestrantes para cada campanha do ano.";
+  } else if (url.pathname.startsWith("/palestras/")) {
+    const slug = url.pathname.slice(11).replace(/\/$/, "");
+    theme = cats.find((c) => slugify(c) === slug) || null;
+    if (!theme) return notFoundPage(res);
+    kind = "tema"; title = themeTitle(theme) + " | SpeakerConnect";
+    desc = clip(THEME_INTRO[theme] || "Palestrantes sobre " + theme + ". Peça orçamento sem custo.", 158);
+  }
+  const canon = base + url.pathname.replace(/\/$/, "");
+  const html = (await res.text())
+    .replace("{{TITLE}}", escHtml(title)).replace("{{DESC}}", escHtml(desc)).replace("{{CANON}}", canon)
+    .replace('<main class="about tema" id="tema"></main>', () => '<main class="about tema" id="tema">' + themeHtml(kind, cats, rows, theme) + "</main>");
+  const headers = new Headers(res.headers);
+  headers.delete("content-length"); headers.delete("etag");
+  headers.set("Cache-Control", "public, max-age=600");
+  return new Response(html, { status: 200, headers });
 }
 
 async function homePage(request, env) {
@@ -845,30 +961,42 @@ async function profilePage(request, env) {
   const url = new URL(request.url);
   // Endereço antigo (.html): manda para o endereço limpo, mantendo o ?id=.
   if (url.pathname.endsWith(".html")) return new Response(null, { status: 301, headers: { Location: "/palestrante" + url.search } });
-  const res = await env.ASSETS.fetch(request);
-  const id = url.searchParams.get("id") || "";
+  const pretty = url.pathname.match(PRETTY);
+  const res = await env.ASSETS.fetch(new Request(new URL("/palestrante", url), request));
   if (!res.ok || !/text\/html/.test(res.headers.get("content-type") || "") || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return res;
-  if (!UUID.test(id)) return notFoundPage(res);
+  const id = url.searchParams.get("id") || "";
+  if (!pretty && !UUID.test(id)) return notFoundPage(res);
   let s = null;
-  try { s = (await publicSpeakers(env, `select=${SPEAKER_SEO_COLS}&id=eq.${id}&status=eq.approved&limit=1`))[0] || null; }
+  const filter = pretty ? `id_short=eq.${pretty[2]}` : `id=eq.${id}`;
+  try { s = (await publicSpeakers(env, `select=${SPEAKER_SEO_COLS}&${filter}&status=eq.approved&limit=1`))[0] || null; }
   catch (e) { console.error("perfil: prévia falhou:", e && e.message); return res; }
   // Perfil que não existe (ou saiu do ar): 404 de verdade, para o Google não guardar uma página vazia ("soft 404").
   if (!s || !s.public_name) return notFoundPage(res);
-  const html = speakerBody(speakerMeta(await res.text(), s, siteBase(env) + url.pathname + "?id=" + id, env), s);
+  // ?id=... ou nome desatualizado: manda (301) para o endereço com o nome, que é o oficial.
+  const path = spPath(s);
+  if (url.pathname !== path) return new Response(null, { status: 301, headers: { Location: path, "Cache-Control": "public, max-age=300" } });
+  const html = speakerBody(speakerMeta(await res.text(), s, siteBase(env) + path, env), s);
   const headers = new Headers(res.headers);
   headers.delete("content-length"); headers.delete("etag");
   headers.set("Cache-Control", "public, max-age=300");
   return new Response(html, { status: 200, headers });
 }
 
-const STATIC_PAGES = ["/", "/sobre", "/entidades", "/termos", "/privacidade", "/termo-palestrante"];
+const STATIC_PAGES = ["/", "/sobre", "/entidades", "/palestras", "/campanhas", "/termos", "/privacidade", "/termo-palestrante"];
 async function sitemap(request, env) {
   const base = siteBase(env);
   let rows = [];
-  try { if (env.SUPABASE_URL && env.SUPABASE_ANON_KEY) rows = await publicSpeakers(env, "select=id,updated_at&status=eq.approved&order=updated_at.desc&limit=5000"); }
+  let cats = [];
+  try {
+    if (env.SUPABASE_URL && env.SUPABASE_ANON_KEY) {
+      rows = await publicSpeakers(env, "select=id,public_name,updated_at&status=eq.approved&order=updated_at.desc&limit=5000");
+      cats = (await publicSpeakers(env, "select=name&active=eq.true&order=sort", "categories")).map((c) => c.name).filter(Boolean);
+    }
+  }
   catch (e) { console.error("sitemap: falhou:", e && e.message); return env.ASSETS.fetch(request); }
   const urls = STATIC_PAGES.map((p) => `  <url><loc>${base}${p}</loc></url>`)
-    .concat(rows.filter((r) => UUID.test(r.id || "")).map((r) => `  <url><loc>${base}/palestrante?id=${r.id}</loc>${r.updated_at ? `<lastmod>${String(r.updated_at).slice(0, 10)}</lastmod>` : ""}</url>`));
+    .concat(cats.map((c) => `  <url><loc>${base}/palestras/${slugify(c)}</loc></url>`))
+    .concat(rows.filter((r) => UUID.test(r.id || "")).map((r) => `  <url><loc>${base}${spPath(r)}</loc>${r.updated_at ? `<lastmod>${String(r.updated_at).slice(0, 10)}</lastmod>` : ""}</url>`));
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
   return new Response(xml, { headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" } });
 }
@@ -1101,7 +1229,11 @@ export default {
       try { return await h({ request, env, ctx }); }
       catch (e) { console.error(pathname, "falhou:", e && e.message); return json(500, { error: "Erro inesperado. Tente de novo em instantes." }); }
     }
-    if (pathname === "/palestrante" || pathname === "/palestrante.html") {
+    if (pathname === "/tema" || pathname === "/tema.html") return Response.redirect(new URL("/palestras", request.url).toString(), 301);
+    if (pathname === "/palestras" || pathname.startsWith("/palestras/") || pathname === "/campanhas") {
+      try { return await themePages(request, env); } catch (e) { console.error("temas falhou:", e && e.message); return env.ASSETS.fetch(request); }
+    }
+    if (pathname === "/palestrante" || pathname === "/palestrante.html" || PRETTY.test(pathname)) {
       try { return await profilePage(request, env); } catch (e) { console.error("perfil falhou:", e && e.message); return env.ASSETS.fetch(request); }
     }
     if (pathname === "/sitemap.xml") return sitemap(request, env);

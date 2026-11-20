@@ -316,6 +316,22 @@
   }
 
   // ---------- início ----------
+  // Vídeo aceito no perfil: o mesmo formato que o site consegue mostrar (YouTube ou Vimeo).
+  function videoOk(u) { return !u || /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)[\w-]{11}|vimeo\.com\/\d+/.test(u); }
+  // Barra "perfil completo": os itens obrigatórios valem mais; vídeo, nota fiscal e palestras são extras que ajudam a vender.
+  function profileScore(s) {
+    var req = [!!s.photo_url, (s.headline || "").length >= 10, (s.bio || "").length >= 80, (s.categories || []).length > 0, !!(s.city && s.uf), !!s.fee_from_cents,
+      !!(myDoc && myDoc.front_path), !!(myDoc && myDoc.terms_version)];
+    var extra = [[!!(s.video_url && videoOk(s.video_url)), "um vídeo do YouTube ou Vimeo"], [!!s.invoice, "como você emite nota fiscal"], [!!(s.topics || "").trim(), "a lista de palestras"]];
+    var pts = req.filter(Boolean).length * 10 + extra.filter(function (x) { return x[0]; }).length * (20 / 3);
+    return { pct: Math.min(100, Math.round(pts)), tips: extra.filter(function (x) { return !x[0]; }).map(function (x) { return x[1]; }) };
+  }
+  function scoreBar(s) {
+    var sc = profileScore(s);
+    return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><h3 style="margin:0">Perfil ' + sc.pct + "% completo</h3>" + (sc.pct === 100 ? '<span class="pill ok">Completo</span>' : "") + "</div>" +
+      '<div style="height:10px;border-radius:99px;background:#E4E3F1;margin:10px 0 8px;overflow:hidden"><div style="height:100%;width:' + sc.pct + '%;background:' + (sc.pct === 100 ? "#15803D" : "#F5B841") + ';border-radius:99px"></div></div>' +
+      (sc.tips.length ? '<p class="muted small" style="margin:0">Para chamar mais a atenção das empresas, inclua ' + e(sc.tips.join(", ").replace(/, ([^,]*)$/, " e $1")) + ".</p>" : '<p class="muted small" style="margin:0">Ótimo! Perfis completos chamam mais a atenção das empresas.</p>') + "</div>";
+  }
   function profileChecklist(s) {
     var items = [
       [!!s.photo_url, "Foto"], [(s.headline || "").length >= 10, "Título da palestra"], [(s.bio || "").length >= 80, "Apresentação (mín. 80 letras)"],
@@ -327,7 +343,7 @@
   function speakerStatusCard() {
     var s = me || {};
     if (s.status === "approved") {
-      return '<div class="card dark"><h3>Seu perfil está publicado</h3><p class="muted small" style="margin:4px 0 12px">As empresas já encontram você no site.</p><a class="btn spot slim" href="/palestrante?id=' + e(s.id) + '">Ver minha página</a></div>' + seloCard();
+      return '<div class="card dark"><h3>Seu perfil está publicado</h3><p class="muted small" style="margin:4px 0 12px">As empresas já encontram você no site.</p><a class="btn spot slim" href="/palestrante?id=' + e(s.id) + '">Ver minha página</a></div>' + (profileScore(s).pct < 100 ? scoreBar(s) : "") + seloCard();
     }
     if (s.status === "pending") return '<div class="card"><span class="pill warn">Em análise</span><h3 style="margin-top:10px">Recebemos seu perfil</h3><p class="muted small" style="margin:0">Nossa equipe revisa em até 2 dias úteis e avisa você por e-mail.</p></div>';
     if (s.status === "suspended") return '<div class="card"><span class="pill err">Suspenso</span><p class="muted small" style="margin:10px 0 0">Seu perfil está fora do ar. Fale com a equipe para entender o motivo.</p></div>';
@@ -859,7 +875,7 @@
     loadCats().then(function () {
       var s = me || {};
       var status = { draft: ["Rascunho", "warn"], pending: ["Em análise", "warn"], approved: ["Publicado", "ok"], rejected: ["Precisa de ajustes", "err"], suspended: ["Suspenso", "err"] }[s.status] || ["", ""];
-      var html = '<p style="margin:0 0 12px"><span class="pill ' + status[1] + '">' + status[0] + "</span>" + (s.status === "approved" ? ' <a class="small" href="/palestrante?id=' + e(s.id) + '">Ver página</a>' : "") + "</p>" +
+      var html = '<p style="margin:0 0 12px"><span class="pill ' + status[1] + '">' + status[0] + "</span>" + (s.status === "approved" ? ' <a class="small" href="/palestrante?id=' + e(s.id) + '">Ver página</a>' : "") + "</p>" + scoreBar(s) +
         (s.status === "rejected" && s.review_note ? '<div class="err" style="margin:0 0 12px"><b>O que ajustar:</b> ' + e(s.review_note) + "</div>" : "") +
         '<form id="f" class="pform" novalidate><div class="card"><div class="photo">' + avatar(s.public_name, s.photo_url).replace('class="av"', 'class="av" id="pv"') +
         '<div><label for="pic" class="btn slim ghost" style="margin:0;cursor:pointer">Trocar foto</label><input id="pic" type="file" accept="image/jpeg,image/png,image/webp" hidden><p class="hint">Rosto bem visível, fundo neutro.</p></div></div>' +
@@ -871,8 +887,12 @@
         cats.map(function (c) { return '<label><input type="checkbox" value="' + e(c) + '"' + ((s.categories || []).indexOf(c) > -1 ? " checked" : "") + ">" + e(c) + "</label>"; }).join("") + "</div>" +
         '<label>Formatos</label><div class="chips"><label><input type="checkbox" id="fp"' + ((s.formats || []).indexOf("presencial") > -1 ? " checked" : "") + '>Presencial</label><label><input type="checkbox" id="fo"' + ((s.formats || []).indexOf("online") > -1 ? " checked" : "") + ">Online</label></div>" +
         '<div class="row"><div style="flex:2"><label for="ci">Cidade onde você mora</label><input id="ci" maxlength="60" value="' + e(s.city || "") + '"></div><div><label for="uf">UF</label>' + ufSelect("uf", s.uf) + "</div></div>" +
-        '<label for="fe">Valor de referência <span class="opt">(a partir de)</span></label><input id="fe" inputmode="decimal" placeholder="Ex.: 3.500,00" value="' + (s.fee_from_cents ? (s.fee_from_cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "") + '"><p class="hint">Aparece no seu perfil. O valor de cada evento você define na proposta.</p></div>' +
+        '<label for="fe">Valor de referência <span class="opt">(a partir de)</span></label><input id="fe" inputmode="decimal" placeholder="Ex.: 3.500,00" value="' + (s.fee_from_cents ? (s.fee_from_cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "") + '"><p class="hint">Aparece no seu perfil. O valor de cada evento você define na proposta.</p>' +
+        '<label for="nf">Nota fiscal <span class="opt">(empresas maiores costumam exigir)</span></label><select id="nf"><option value="">Prefiro não informar</option>' +
+        [["cnpj", "Emito nota fiscal (empresa com CNPJ)"], ["mei", "Emito nota fiscal como MEI"], ["rpa", "Não tenho CNPJ: recibo de autônomo (RPA)"]].map(function (o) { return '<option value="' + o[0] + '"' + (s.invoice === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") +
+        '</select><p class="hint">Quem emite nota fiscal ganha o selo "Emite NF" no perfil e aparece no filtro das empresas que exigem nota.</p></div>' +
         '<div class="card"><label for="vd" style="margin-top:0">Vídeo <span class="opt">(link do YouTube ou Vimeo)</span></label><input id="vd" type="url" inputmode="url" maxlength="300" value="' + e(s.video_url || "") + '" placeholder="https://youtube.com/…">' +
+        '<p class="hint" id="vdh">Só aparecem no perfil vídeos do <b>YouTube</b> ou do <b>Vimeo</b>. Links do Instagram, TikTok ou Google Drive não funcionam: publique o vídeo no YouTube (pode ser "não listado") e cole o link aqui.</p>' +
         '<p class="hint">Para sua segurança e a da empresa, o perfil não mostra telefone, e-mail, redes sociais nem links. Os contatos são liberados depois do pagamento.</p></div>' +
         docCard() +
         '<div id="msg" role="alert"></div><button class="full" id="save">Salvar</button>' +
@@ -881,6 +901,8 @@
       shell(html, "perfil", head);
       function count() { var n = val("bi").length; $("bic").textContent = n < 80 ? "Faltam " + (80 - n) + " letras para o mínimo." : n + " letras."; }
       $("bi").oninput = count; count();
+      var vdTip = $("vdh").innerHTML;
+      $("vd").oninput = function () { var ok = videoOk(val("vd")); $("vdh").style.color = ok ? "" : "#B42318"; $("vdh").innerHTML = ok ? vdTip : "Este link não vai aparecer no perfil. Use um link do <b>YouTube</b> (youtube.com/watch?v=… ou youtu.be/…) ou do <b>Vimeo</b>."; };
       $("cats").onchange = function (ev) {
         var on = $("cats").querySelectorAll("input:checked");
         if (on.length > 5) { ev.target.checked = false; toast("Escolha até 5 temas."); }
@@ -913,9 +935,10 @@
         var fee = val("fe") ? parseBrl(val("fe")) : null;
         var https = function (u) { return u ? (/^https:\/\//.test(u) ? u : /^http:\/\//.test(u) ? u.replace(/^http:/, "https:") : "https://" + u) : null; };
         return {
-          error: val("pn").length < 2 ? "Informe o nome público." : !formats.length ? "Escolha pelo menos um formato." : (val("fe") && !(fee > 0)) ? "Confira o valor de referência. Ex.: 3.500,00" : null,
+          error: val("pn").length < 2 ? "Informe o nome público." : !formats.length ? "Escolha pelo menos um formato." : (val("fe") && !(fee > 0)) ? "Confira o valor de referência. Ex.: 3.500,00"
+            : !videoOk(val("vd")) ? "O link do vídeo precisa ser do YouTube ou do Vimeo. Links do Instagram e de outras redes não aparecem no perfil." : null,
           data: { public_name: val("pn"), headline: val("hl") || null, bio: val("bi") || null, topics: val("tp") || null, categories: catsOn, formats: formats,
-                  city: val("ci") || null, uf: val("uf") || null, fee_from_cents: fee || null, video_url: https(val("vd")) }
+                  city: val("ci") || null, uf: val("uf") || null, fee_from_cents: fee || null, video_url: https(val("vd")), invoice: val("nf") || null }
         };
       }
       function save(sendReview) {

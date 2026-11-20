@@ -938,3 +938,10 @@ create policy leads_admin_update on public.leads for update to authenticated usi
 alter table public.leads add column if not exists kind text not null default 'indicacao' check (kind in ('indicacao', 'entidade'));
 alter table public.leads add column if not exists role text check (char_length(role) <= 120);
 create index if not exists leads_kind_idx on public.leads (kind, created_at desc);
+
+-- Nota fiscal: como o palestrante emite (empresa com CNPJ, MEI ou RPA de autônomo). Vazio = não informou.
+alter table public.speakers add column if not exists invoice text check (invoice is null or invoice in ('cnpj', 'mei', 'rpa'));
+grant update (invoice) on public.speakers to authenticated;
+-- Endereço com nome: /palestrante/nome-do-palestrante-<id_short>
+alter table public.speakers add column if not exists id_short text generated always as (left(id::text, 8)) stored;
+create index if not exists speakers_id_short_idx on public.speakers (id_short);

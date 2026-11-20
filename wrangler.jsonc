@@ -7,7 +7,7 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/", "/api/*", "/palestrante", "/palestrante.html", "/sitemap.xml"]
+    "run_worker_first": ["/", "/api/*", "/palestrante", "/palestrante.html", "/palestrante/*", "/palestras", "/palestras/*", "/campanhas", "/tema", "/tema.html", "/sitemap.xml"]
   },
   // Agendador: todo dia às 12:00 UTC (9h em Brasília) envia os lembretes de perfil incompleto.
   "triggers": { "crons": ["0 12 * * *"] },
