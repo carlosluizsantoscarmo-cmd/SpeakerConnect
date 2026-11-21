@@ -401,6 +401,8 @@
       fetch("/api/indicacao", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || "Não foi possível enviar agora."); return d; }); })
         .then(function () {
+          // Página de agradecimento: também é onde o Google Ads conta a conversão
+          try { location.href = "/obrigado?tipo=" + encodeURIComponent(o.kind); return; } catch (x) {}
           f.innerHTML = '<div class="lf-done"><h3>' + o.doneTitle + '</h3><p>' + o.doneText + '</p><p class="muted">Enviamos uma confirmação para o seu e-mail.</p>' +
             (C.whatsapp ? '<a class="btn" target="_blank" rel="noopener" href="https://wa.me/' + e(C.whatsapp) + "?text=" + encodeURIComponent(o.waText) + '">Falar no WhatsApp</a>' : "") + "</div>";
           f.scrollIntoView({ block: "center" });

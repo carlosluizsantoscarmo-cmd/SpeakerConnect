@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pedido recebido | SpeakerConnect</title>
+<meta name="description" content="Conheça a história, a missão, a visão e os valores do SpeakerConnect, a plataforma capixaba que conecta empresas a palestrantes.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1B1A4B">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-48.png" sizes="48x48" type="image/png">
+<link rel="icon" href="/favicon-96.png" sizes="96x96" type="image/png">
+<link rel="apple-touch-icon" href="/favicon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..900&family=Instrument+Sans:wght@400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header id="top"></header>
+<main class="about">
+<section class="ab-hero"><div class="wrap">
+  <p class="ab-eb">Recebido</p>
+  <h1 id="ob-t">Obrigado! <span>Já estamos cuidando do seu pedido.</span></h1>
+  <p class="ab-lead" id="ob-p">Nossa equipe vai responder em até 1 dia útil com sugestões de palestrantes para o seu evento. Enviamos uma confirmação para o seu e-mail.</p>
+  <div class="ab-btns" style="justify-content:flex-start;margin-top:26px"><a class="btn spot" href="/#palestrantes">Ver os palestrantes</a><a class="btn ghost" href="/campanhas">Calendário de campanhas</a></div>
+</div></section>
+</main>
+<footer id="bottom"></footer>
+<script src="/config.js"></script>
+<script src="/site.js"></script>
+<script>
+if (new URLSearchParams(location.search).get("tipo") === "entidade") {
+  document.getElementById("ob-t").innerHTML = 'Obrigado! <span>Vamos conversar sobre a parceria.</span>';
+  document.getElementById("ob-p").textContent = "Recebemos o contato da sua entidade e vamos falar com você em até 1 dia útil. Enviamos uma confirmação para o seu e-mail.";
+}
+</script>
+</body>
+</html>
