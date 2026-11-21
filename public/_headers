@@ -14,3 +14,7 @@
 
 /config.js
   Cache-Control: no-cache
+
+/midia/*
+  Access-Control-Allow-Origin: *
+  X-Robots-Tag: noindex
