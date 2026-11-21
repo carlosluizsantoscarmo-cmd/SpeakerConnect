@@ -23,5 +23,7 @@ window.SC = {
   verifiedPrice: "R$ 199,00 por ano",
   // Cloudflare Web Analytics (visitas do site, sem cookies): o "token" do site em Analytics & Logs > Web Analytics.
   // Vazio = não mede. Se a medição automática do Cloudflare já estiver ligada, deixe vazio para não contar em dobro.
-  cfBeacon: ""
+  cfBeacon: "",
+  // Tag do Google Ads (conta 579-705-4625). Conta como conversão quem chega em /obrigado. Vazio = desligado.
+  googleAds: "AW-18588382651"
 };

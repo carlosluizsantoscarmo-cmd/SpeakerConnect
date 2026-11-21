@@ -438,5 +438,19 @@
     document.head.appendChild(s);
   }
 
+  // Tag do Google Ads: as conversões (visita a /obrigado) são definidas no próprio Google Ads.
+  function googleAds() {
+    var id = C.googleAds || "";
+    if (!/^AW-\d+$/.test(id)) return;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };
+    window.gtag("js", new Date());
+    window.gtag("config", id);
+    var s = document.createElement("script");
+    s.async = true; s.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(id);
+    document.head.appendChild(s);
+  }
+
+  googleAds();
   document.addEventListener("DOMContentLoaded", function () { chrome(); catbar(); catalog(); profile(); leadForm(); analytics(); });
 })();
