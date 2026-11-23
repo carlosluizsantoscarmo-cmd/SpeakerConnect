@@ -441,7 +441,7 @@
   // Tag do Google Ads: as conversões (visita a /obrigado) são definidas no próprio Google Ads.
   function googleAds() {
     var id = C.googleAds || "";
-    if (!/^AW-\d+$/.test(id)) return;
+    if (!/^AW-\d+$/.test(id) || document.querySelector('script[src*="googletagmanager.com/gtag/js"]')) return; // a tag já vem no HTML
     window.dataLayer = window.dataLayer || [];
     window.gtag = function () { window.dataLayer.push(arguments); };
     window.gtag("js", new Date());
