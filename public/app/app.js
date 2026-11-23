@@ -317,11 +317,14 @@
 
   // ---------- início ----------
   // Vídeo aceito no perfil: o mesmo formato que o site consegue mostrar (YouTube ou Vimeo).
+  // Documento completo: frente e verso. Só a frente basta para PDF (CNH digital) ou passaporte (uma página).
+  function docSingle(d) { return !!d && (/\.pdf$/i.test(d.front_path || "") || d.doc_type === "Passaporte"); }
+  function docOk(d) { return !!(d && d.front_path && (d.back_path || docSingle(d))); }
   function videoOk(u) { return !u || /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)[\w-]{11}|vimeo\.com\/\d+/.test(u); }
   // Barra "perfil completo": os itens obrigatórios valem mais; vídeo, nota fiscal e palestras são extras que ajudam a vender.
   function profileScore(s) {
     var req = [!!s.photo_url, (s.headline || "").length >= 10, (s.bio || "").length >= 80, (s.categories || []).length > 0, !!(s.city && s.uf), !!s.fee_from_cents,
-      !!(myDoc && myDoc.front_path), !!(myDoc && myDoc.terms_version)];
+      docOk(myDoc), !!(myDoc && myDoc.terms_version)];
     var extra = [[!!(s.video_url && videoOk(s.video_url)), "um vídeo do YouTube ou Vimeo"], [!!s.invoice, "como você emite nota fiscal"], [!!(s.topics || "").trim(), "a lista de palestras"]];
     var pts = req.filter(Boolean).length * 10 + extra.filter(function (x) { return x[0]; }).length * (20 / 3);
     return { pct: Math.min(100, Math.round(pts)), tips: extra.filter(function (x) { return !x[0]; }).map(function (x) { return x[1]; }) };
@@ -336,7 +339,7 @@
     var items = [
       [!!s.photo_url, "Foto"], [(s.headline || "").length >= 10, "Título da palestra"], [(s.bio || "").length >= 80, "Apresentação (mín. 80 letras)"],
       [(s.categories || []).length > 0, "Pelo menos um tema"], [!!(s.city && s.uf), "Cidade e estado"], [!!s.fee_from_cents, "Valor de referência"],
-      [!!(myDoc && myDoc.front_path), "Documento de identidade"], [!!(myDoc && myDoc.terms_version), "Termo do palestrante aceito"]
+      [docOk(myDoc), "Documento de identidade (frente e verso)"], [!!(myDoc && myDoc.terms_version), "Termo do palestrante aceito"]
     ];
     return '<ul class="steps">' + items.map(function (i) { return '<li class="' + (i[0] ? "done" : "") + '"><span class="dot">' + (i[0] ? icon("check", 14) : "") + "</span>" + e(i[1]) + "</li>"; }).join("") + "</ul>";
   }
@@ -819,7 +822,7 @@
     var d = myDoc || {};
     var types = ["RG", "CNH", "RNE", "Passaporte"];
     function fileRow(side, label, path) {
-      return '<div class="docrow"><div><b>' + label + "</b>" + (path ? '<span class="pill ok">Enviado</span>' : '<span class="pill warn">' + (side === "front" ? "Falta enviar" : "Opcional") + "</span>") + "</div>" +
+      return '<div class="docrow"><div><b>' + label + "</b>" + (path ? '<span class="pill ok">Enviado</span>' : '<span class="pill warn">' + (side === "front" || !docSingle(d) ? "Falta enviar" : "Não precisa") + "</span>") + "</div>" +
         '<label for="doc-' + side + '" class="btn slim ghost" style="margin:0;cursor:pointer">' + (path ? "Trocar" : "Enviar foto") + '</label><input id="doc-' + side + '" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" hidden></div>';
     }
     return '<div class="card doccard"><h3>Documento e termo</h3><p class="muted small" style="margin:4px 0 0">Usamos o documento só para confirmar sua identidade. Ele fica numa área privada: só você e a equipe do SpeakerConnect veem.</p>' +
@@ -945,6 +948,7 @@
         var c = collect(), btn = sendReview ? $("submit") : $("save");
         $("msg").innerHTML = "";
         if (!c.error && sendReview && !(myDoc && myDoc.front_path)) c.error = "Envie a foto do seu documento (frente) antes de enviar para análise.";
+        if (!c.error && sendReview && !docOk(myDoc)) c.error = "Envie também a foto do verso do documento antes de enviar para análise.";
         if (!c.error && sendReview && !(myDoc && myDoc.terms_version)) c.error = "Marque o aceite do termo do palestrante antes de enviar para análise.";
         if (c.error) { $("msg").innerHTML = '<div class="err">' + e(c.error) + "</div>"; return; }
         if (sendReview) c.data.status = "pending";

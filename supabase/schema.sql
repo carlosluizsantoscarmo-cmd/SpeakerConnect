@@ -245,8 +245,9 @@ begin
   end if;
   if new.status = 'pending' and not exists (
        select 1 from public.speaker_documents d
-        where d.speaker_id = new.id and d.front_path is not null and d.terms_version is not null) then
-    raise exception 'Envie a foto do seu documento e aceite o termo do palestrante antes de enviar para análise.' using errcode = '23514';
+        where d.speaker_id = new.id and d.front_path is not null and d.terms_version is not null
+          and (d.back_path is not null or d.front_path ~* '\.pdf$' or d.doc_type = 'Passaporte')) then
+    raise exception 'Envie a foto do seu documento (frente e verso) e aceite o termo do palestrante antes de enviar para análise.' using errcode = '23514';
   end if;
   return new;
 end $$;
