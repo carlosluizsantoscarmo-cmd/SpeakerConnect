@@ -399,3 +399,10 @@ test("contato de entidade: grava como entidade e manda e-mails próprios", async
   assert.match(t.mails.find((m) => m.to[0] === t.env.NOTIFY_EMAIL).subject, /Entidade quer parceria: CDL Vitória/);
   assert.match(t.mails.find((m) => m.to[0] === "c@cdl.org.br").text, /parceria entre CDL Vitória/);
 });
+
+test("avisos da equipe saem de avisos@ para o Responder do Gmail ir para a empresa", async () => {
+  const { fromFor } = await import("../worker.js");
+  const env = { MAIL_FROM: "SpeakerConnect <contato@speakerconnect.com.br>", NOTIFY_EMAIL: "admin@speakerconnect.com.br" };
+  assert.equal(fromFor(env, "admin@speakerconnect.com.br"), "SpeakerConnect Avisos <avisos@speakerconnect.com.br>");
+  assert.equal(fromFor(env, "ana@x.com"), "SpeakerConnect <contato@speakerconnect.com.br>");
+});

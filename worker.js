@@ -107,13 +107,22 @@ async function currentUser(request, env) {
 }
 
 // ---------- e-mails (Resend) ----------
+// Avisos para a equipe saem de "avisos@": se saíssem do mesmo endereço que a equipe usa no Gmail (contato@),
+// o Gmail trataria como mensagem própria e o "Responder" iria para a própria equipe em vez de ir para a empresa.
+export function fromFor(env, to) {
+  const base = env.MAIL_FROM || `${BRAND} <onboarding@resend.dev>`;
+  if (!env.NOTIFY_EMAIL || to !== env.NOTIFY_EMAIL) return base;
+  if (env.TEAM_FROM) return env.TEAM_FROM;
+  const dom = (base.match(/@([^>\s]+)>?\s*$/) || [])[1];
+  return dom && dom !== "resend.dev" ? `${BRAND} Avisos <avisos@${dom}>` : base;
+}
 export async function sendMail(env, { to, subject, text, replyTo }) {
   if (!env.RESEND_API_KEY || !to) return false;
   try {
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({ from: env.MAIL_FROM || `${BRAND} <onboarding@resend.dev>`, to: [to], subject, text }, replyTo ? { reply_to: replyTo } : {})),
+      body: JSON.stringify(Object.assign({ from: fromFor(env, to), to: [to], subject, text }, replyTo ? { reply_to: replyTo } : {})),
     });
     if (!r.ok) console.error("e-mail recusado pelo Resend:", r.status);
     return r.ok;
