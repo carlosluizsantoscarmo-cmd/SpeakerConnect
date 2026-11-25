@@ -248,10 +248,12 @@ test("aviso do Supabase: exige a senha e manda o e-mail certo", async () => {
   const t = await setup({ quoteStatus: "requested" });
   assert.equal((await t.call("/api/aviso", { method: "POST", body: { type: "pedido_novo", id: QUOTE } })).status, 401);
   const r = await t.call("/api/aviso", { method: "POST", body: { type: "pedido_novo", id: QUOTE }, headers: { "x-sc-secret": "segredo-de-teste-123456" } });
-  assert.equal((await r.json()).enviados, 1);
+  assert.equal((await r.json()).enviados, 2); // palestrante + cópia para a equipe
   await tick();
   assert.equal(t.mails[0].to[0], "ana@x.com");
   assert.match(t.mails[0].text, /20\/11\/2026/);
+  assert.match(t.mails[1].subject, /^Novo pedido para /);
+  assert.notEqual(t.mails[1].to[0], "ana@x.com");
 });
 
 test("excluir conta: só a própria, e não com palestra paga em aberto", async () => {

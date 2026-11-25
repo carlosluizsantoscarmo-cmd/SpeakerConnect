@@ -647,7 +647,12 @@ export async function buildNotice(env, request, type, id) {
   const link = `${site}/app/#/pedido?id=${q.id}`;
   if (type === "pedido_novo" && s) return [{ to: s.email, subject: `Novo pedido de orçamento: ${line(q.title, 80)}`,
     text: `Olá, ${first(s.name)}!\n\n${line(q.company_name, 80)} pediu um orçamento:\n\nEvento: ${line(q.title, 120)}\nData: ${when(q)}\nLocal: ${where(q)}` +
-          (q.audience ? `\nPúblico estimado: ${q.audience} pessoas` : "") + `\n\nResponda com sua proposta: ${link}` + foot }];
+          (q.audience ? `\nPúblico estimado: ${q.audience} pessoas` : "") + `\n\nResponda com sua proposta: ${link}` + foot }].concat(team ? [{
+    to: team, replyTo: c && c.email, subject: `Novo pedido para ${line(q.speaker_name, 60)}: ${line(q.title, 80)}`,
+    text: `Empresa: ${line(q.company_name, 80)}${c ? ` (${line(c.name, 60)}, ${c.email})` : ""}\nPalestrante: ${line(q.speaker_name, 80)}${s.email ? ` (${s.email})` : ""}\n` +
+          `Evento: ${line(q.title, 120)}\nData: ${when(q)}\nLocal: ${where(q)}` + (q.audience ? `\nPúblico estimado: ${q.audience} pessoas` : "") +
+          (q.message ? `\n\nDetalhes:\n${String(q.message).slice(0, 1500)}` : "") +
+          `\n\nO palestrante já foi avisado. Responda este e-mail para falar direto com a empresa. Veja em ${site}/equipe/.` }] : []);
   if (type === "proposta_recebida" && c) return [{ to: c.email, subject: `Proposta recebida: ${line(q.title, 80)}`,
     text: `Olá, ${first(c.name)}!\n\n${line(q.speaker_name, 80)} enviou uma proposta para "${line(q.title, 120)}".\nValor: ${brl(q.amount_cents || 0)}` +
           (q.speaker_note ? `\nObservações: ${line(q.speaker_note, 500)}` : "") + `\n\nVeja e aceite pelo app: ${link}` + foot }];
