@@ -100,6 +100,7 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
     <button data-t="agenda">Agenda<span class="n" id="n-ag" hidden></span></button>
     <button data-t="pagamentos">Financeiro<span class="n" id="n-rep" hidden></span></button>
     <button data-t="empresas">Empresas<span class="n" id="n-lg" hidden></span></button>
+    <button data-t="certificados">Certificados</button>
     <button data-t="temas">Temas</button>
     <button data-t="alertas">Alertas<span class="n" id="n-al" hidden></span></button>
   </nav>
@@ -110,6 +111,7 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
   <div class="acts" style="justify-content:flex-end"><button value="cancel" class="ghost" type="submit">Voltar</button><button value="ok" id="dlgok" type="submit">Confirmar</button></div></form></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="/config.js"></script>
 <script src="/captcha.js"></script>
 <script>
@@ -215,7 +217,9 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
       sb.from("categories").select("*").order("sort"),
       sb.from("speaker_documents").select("*").limit(3000),
       sb.from("contact_attempts").select("*").order("created_at", { ascending: false }).limit(500),
-      sb.from("leads").select("*").order("created_at", { ascending: false }).limit(500)
+      sb.from("leads").select("*").order("created_at", { ascending: false }).limit(500),
+      sb.from("cert_events").select("*").order("event_date", { ascending: false }).limit(500),
+      sb.from("certificates").select("id,event_id,code,name,email,created_at").order("created_at").limit(20000)
     ]).then(function (r) {
       var bad = r.slice(0, 8).filter(function (x) { return x.error; })[0];
       if (bad) throw bad.error;
@@ -223,6 +227,8 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
       (r[6].data || []).forEach(function (x) { data.docs[x.speaker_id] = x; });
       data.attempts = r[7].data || [];
       data.leads = (!r[8].error && r[8].data) || [];
+      data.certEvents = (!r[9].error && r[9].data) || [];
+      data.certs = (!r[10].error && r[10].data) || [];
       var nl = data.leads.filter(function (l) { return l.status === "new"; }).length;
       $("n-lead").hidden = !nl; $("n-lead").textContent = nl;
       data.prof = {}; data.profiles.forEach(function (p) { data.prof[p.id] = p; });
@@ -528,6 +534,86 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
     });
   }
 
+  // ---------- certificados (QR Code) ----------
+  var certOpen = null;
+  function certLink(ev) { return location.origin + "/certificado/?e=" + ev.code; }
+  function certState(ev) {
+    var last = ev.closes_on || addDays(ev.event_date, 7), t = today();
+    if (!ev.open) return ["Encerrado", "err"];
+    if (t > last) return ["Prazo vencido", "err"];
+    if (t < addDays(ev.event_date, -1)) return ["Abre " + ymd(addDays(ev.event_date, -1)), ""];
+    return ["Aberto até " + ymd(last), "ok"];
+  }
+  function qrSVG(text, px) {
+    if (!window.qrcode) return "";
+    var q = window.qrcode(0, "M"); q.addData(text); q.make();
+    var n = q.getModuleCount(), cell = px / (n + 8), d = "";
+    for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (q.isDark(r, c)) d += "M" + ((c + 4) * cell).toFixed(2) + " " + ((r + 4) * cell).toFixed(2) + "h" + cell.toFixed(2) + "v" + cell.toFixed(2) + "h-" + cell.toFixed(2) + "z";
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + px + '" height="' + px + '" viewBox="0 0 ' + px + " " + px + '"><rect width="100%" height="100%" fill="#fff"/><path d="' + d + '" fill="#1B1A4B"/></svg>';
+  }
+  // cartaz para imprimir ou mostrar no telão (abre numa aba nova)
+  function poster(ev) {
+    var w = window.open("", "_blank"); if (!w) { toast("Permita pop-ups para abrir o cartaz."); return; }
+    w.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>QR Code do certificado</title><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;700&display=swap" rel="stylesheet"><style>body{margin:0;font-family:Poppins,sans-serif;background:#1B1A4B;color:#fff;min-height:100vh;display:grid;place-items:center;text-align:center}' +
+      '.c{padding:32px 20px;max-width:900px}h1{font-size:clamp(28px,5vw,54px);margin:0 0 6px}h1 span{color:#F5B841}p{font-size:clamp(16px,2.4vw,24px);margin:6px 0;color:#CFCDEB}.q{background:#fff;border-radius:28px;padding:18px;display:inline-block;margin:24px 0}.q svg{width:min(70vw,58vh);height:auto;display:block}b{color:#fff}.u{font-size:clamp(13px,1.8vw,18px);color:#F5B841;word-break:break-all}@media print{body{background:#fff;color:#1B1A4B}p{color:#33365A}b{color:#1B1A4B}.q{border:2px solid #1B1A4B}}</style></head><body><div class="c">' +
+      "<h1>Pegue seu <span>certificado</span></h1><p>Aponte a câmera do celular para o QR Code</p>" +
+      '<div class="q">' + qrSVG(certLink(ev), 900) + "</div><p><b>" + e(ev.talk_title) + "</b></p><p>com " + e(ev.speaker_name) + " · " + e(ev.company_name) + " · " + ymd(ev.event_date) + '</p><p class="u">' + e(certLink(ev)) + "</p></div></body></html>");
+    w.document.close();
+  }
+  function screenCerts() {
+    var qs = data.quotes.filter(function (q) { return ["accepted", "paid", "done"].indexOf(q.status) > -1; });
+    var html = '<div class="bar"><h1 class="grow">Certificados</h1><button id="cnew">Novo evento de certificado</button></div>' +
+      '<p style="color:var(--mut);margin:-6px 0 14px">Crie um evento para cada palestra. No dia, mostre o QR Code no telão ou imprima o cartaz: cada participante informa nome e e-mail e baixa o certificado na hora.</p>' +
+      '<form id="cform" hidden style="background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:16px;display:grid;gap:10px;max-width:640px">' +
+      (qs.length ? '<label>Puxar dados de um pedido (opcional)<br><select id="cq" style="width:100%"><option value="">— preencher à mão —</option>' + qs.map(function (q) { return '<option value="' + q.id + '">' + e(q.title) + " · " + e(q.company_name) + " → " + e(q.speaker_name) + (q.event_date ? " · " + ymd(q.event_date) : "") + "</option>"; }).join("") + "</select></label>" : "") +
+      '<label>Título da palestra<br><input id="ct" maxlength="160" style="width:100%" placeholder="Ex.: Liderança que gera resultados"></label>' +
+      '<label>Palestrante<br><input id="cs" maxlength="80" style="width:100%"></label>' +
+      '<label>Empresa (aparece como "Realização")<br><input id="cc" maxlength="120" style="width:100%"></label>' +
+      '<label>Nome do evento (opcional)<br><input id="ce" maxlength="120" style="width:100%" placeholder="Ex.: SIPAT 2027, Reunião de Fechamento do Ano"></label>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap"><label>Data<br><input id="cd" type="date"></label><label>Duração (min)<br><input id="cm" type="number" min="10" max="1440" step="5" value="60" style="width:110px"></label></div>' +
+      '<div class="acts"><button type="submit">Criar e gerar QR Code</button><button type="button" class="ghost" id="ccancel">Cancelar</button></div></form>';
+    if (!data.certEvents.length) html += '<div class="empty">Nenhum evento de certificado ainda.</div>';
+    else html += '<div class="scroll"><table><thead><tr><th>Palestra</th><th class="hide">Data</th><th>Emitidos</th><th>Situação</th><th>Ações</th></tr></thead><tbody>' + data.certEvents.map(function (ev) {
+      var list = data.certs.filter(function (c) { return c.event_id === ev.id; }), st = certState(ev);
+      return "<tr><td><b>" + e(ev.talk_title) + '</b><div class="sub">' + e(ev.speaker_name) + " · " + e(ev.company_name) + (ev.event_name ? " · " + e(ev.event_name) : "") + '</div><div class="sub" style="word-break:break-all">' + e(certLink(ev)) + "</div>" +
+        (certOpen === ev.id ? '<div style="margin-top:10px">' + (list.length ? "<ol style=\"margin:0;padding-left:20px\">" + list.map(function (c) { return "<li>" + e(c.name) + ' <span class="sub">' + e(c.email) + " · " + e(c.code) + "</span></li>"; }).join("") + "</ol>" : '<div class="sub">Ninguém emitiu ainda.</div>') + "</div>" : "") + "</td>" +
+        '<td class="hide">' + ymd(ev.event_date) + "</td><td><b>" + list.length + '</b></td><td><span class="pill ' + st[1] + '">' + st[0] + "</span></td>" +
+        '<td><div class="acts"><button data-cp="' + ev.id + '">QR Code / cartaz</button><button class="ghost" data-cl="' + ev.id + '">Copiar link</button>' +
+        '<button class="ghost" data-cv="' + ev.id + '">' + (certOpen === ev.id ? "Esconder lista" : "Ver lista") + "</button>" + (list.length ? '<button class="ghost" data-cx="' + ev.id + '">Baixar lista (Excel)</button>' : "") +
+        '<button class="' + (ev.open ? "bad" : "ok") + '" data-co="' + ev.id + '">' + (ev.open ? "Encerrar" : "Reabrir") + "</button></div></td></tr>";
+    }).join("") + "</tbody></table></div>";
+    main.innerHTML = html;
+    var f = $("cform"), byId = function (id) { return data.certEvents.filter(function (x) { return x.id === id; })[0]; };
+    $("cnew").onclick = function () { f.hidden = false; f.style.display = "grid"; $("ct").focus(); };
+    $("ccancel").onclick = function () { f.hidden = true; f.style.display = "none"; };
+    f.style.display = "none";
+    if ($("cq")) $("cq").onchange = function () {
+      var q = data.quotes.filter(function (x) { return x.id === $("cq").value; })[0]; if (!q) return;
+      var c = data.companies.filter(function (x) { return x.id === q.company_id; })[0];
+      $("cs").value = q.speaker_name || ""; $("cc").value = (c && c.company_name) || q.company_name || ""; $("ce").value = q.title || "";
+      $("cd").value = q.event_date || ""; $("cm").value = q.duration_min || 60; if (!$("ct").value) $("ct").focus();
+    };
+    f.onsubmit = function (ev) {
+      ev.preventDefault();
+      var row = { talk_title: $("ct").value.trim(), speaker_name: $("cs").value.trim(), company_name: $("cc").value.trim(), event_name: $("ce").value.trim() || null,
+        event_date: $("cd").value, duration_min: Number($("cm").value) || null, quote_id: ($("cq") && $("cq").value) || null };
+      if (row.talk_title.length < 3 || row.speaker_name.length < 2 || row.company_name.length < 2 || !row.event_date) { toast("Preencha título, palestrante, empresa e data."); return; }
+      sb.from("cert_events").insert(row).select().single().then(function (r) { if (!fail(r)) { toast("Evento criado."); refresh().then(function () { poster(r.data); }); } });
+    };
+    main.querySelectorAll("[data-cp]").forEach(function (b) { b.onclick = function () { poster(byId(b.getAttribute("data-cp"))); }; });
+    main.querySelectorAll("[data-cl]").forEach(function (b) { b.onclick = function () { var l = certLink(byId(b.getAttribute("data-cl"))); (navigator.clipboard ? navigator.clipboard.writeText(l) : Promise.reject()).then(function () { toast("Link copiado."); }, function () { window.prompt("Copie o link:", l); }); }; });
+    main.querySelectorAll("[data-cv]").forEach(function (b) { b.onclick = function () { var id = b.getAttribute("data-cv"); certOpen = certOpen === id ? null : id; render(); }; });
+    main.querySelectorAll("[data-cx]").forEach(function (b) { b.onclick = function () {
+      var ev = byId(b.getAttribute("data-cx")), list = data.certs.filter(function (c) { return c.event_id === ev.id; });
+      csv(list, [["Nome", function (c) { return c.name; }], ["E-mail", function (c) { return c.email; }], ["Código", function (c) { return c.code; }], ["Emitido em", function (c) { return new Date(c.created_at).toLocaleString("pt-BR"); }]], "presenca-" + ev.code + ".csv");
+    }; });
+    main.querySelectorAll("[data-co]").forEach(function (b) { b.onclick = function () {
+      var ev = byId(b.getAttribute("data-co"));
+      sb.from("cert_events").update({ open: !ev.open }).eq("id", ev.id).then(function (r) { if (!fail(r)) { toast(ev.open ? "Emissão encerrada." : "Emissão reaberta."); refresh(); } });
+    }; });
+  }
+
   // ---------- temas ----------
   function screenThemes() {
     var html = '<div class="bar"><h1 class="grow">Temas</h1></div><form class="bar" id="add"><input id="nt" maxlength="40" placeholder="Novo tema (ex.: Atendimento ao cliente)" style="flex:1;max-width:420px"><button>Incluir tema</button></form>' +
@@ -573,7 +659,7 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
 
   function render() {
     document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-t") === tab); });
-    ({ palestrantes: screenSpeakers, indicacoes: screenLeads, pedidos: screenQuotes, agenda: screenAgenda, pagamentos: screenPayments, empresas: screenCompanies, temas: screenThemes, alertas: screenAlerts })[tab]();
+    ({ palestrantes: screenSpeakers, indicacoes: screenLeads, pedidos: screenQuotes, agenda: screenAgenda, pagamentos: screenPayments, empresas: screenCompanies, temas: screenThemes, alertas: screenAlerts, certificados: screenCerts })[tab]();
   }
 
   function start(session) {

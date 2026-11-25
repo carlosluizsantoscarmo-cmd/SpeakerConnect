@@ -946,3 +946,100 @@ grant update (invoice) on public.speakers to authenticated;
 -- Endereço com nome: /palestrante/nome-do-palestrante-<id_short>
 alter table public.speakers add column if not exists id_short text generated always as (left(id::text, 8)) stored;
 create index if not exists speakers_id_short_idx on public.speakers (id_short);
+
+-- ---------- Certificados de participação (QR Code) ----------
+-- A equipe cria um "evento de certificado" para cada palestra e mostra o QR Code no local.
+-- O participante abre o link, informa nome e e-mail e recebe o certificado na hora.
+-- Qualquer pessoa confere um certificado pelo código em /certificado.
+-- Ninguém de fora lê as tabelas: tudo passa pelas funções abaixo, que só devolvem o necessário.
+
+create table if not exists public.cert_events (
+  id            uuid primary key default gen_random_uuid(),
+  code          text not null unique default substr(replace(gen_random_uuid()::text, '-', ''), 1, 8),
+  quote_id      uuid references public.quotes(id) on delete set null,
+  company_name  text not null check (char_length(company_name) between 2 and 120),
+  event_name    text check (event_name is null or char_length(event_name) <= 120),
+  talk_title    text not null check (char_length(talk_title) between 3 and 160),
+  speaker_name  text not null check (char_length(speaker_name) between 2 and 80),
+  event_date    date not null,
+  duration_min  int check (duration_min is null or duration_min between 10 and 1440),
+  open          boolean not null default true,
+  closes_on     date,                       -- último dia para emitir (vazio = 7 dias após o evento)
+  created_at    timestamptz not null default now()
+);
+
+create table if not exists public.certificates (
+  id          uuid primary key default gen_random_uuid(),
+  event_id    uuid not null references public.cert_events(id) on delete cascade,
+  code        text not null unique,
+  name        text not null check (char_length(name) between 3 and 80),
+  email       text not null check (email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$' and char_length(email) <= 160),
+  created_at  timestamptz not null default now()
+);
+create unique index if not exists certificates_event_email on public.certificates (event_id, lower(email));
+create index if not exists certificates_event on public.certificates (event_id);
+
+alter table public.cert_events enable row level security;
+alter table public.certificates enable row level security;
+drop policy if exists cert_events_admin on public.cert_events;
+create policy cert_events_admin on public.cert_events for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists certificates_admin on public.certificates;
+create policy certificates_admin on public.certificates for all to authenticated using (public.is_admin()) with check (public.is_admin());
+revoke all on public.cert_events, public.certificates from anon;
+grant select, insert, update, delete on public.cert_events, public.certificates to authenticated;
+
+-- dados públicos de um evento (para a tela de emissão)
+create or replace function public.cert_event_info(p_code text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('company_name', company_name, 'event_name', event_name, 'talk_title', talk_title,
+           'speaker_name', speaker_name, 'event_date', event_date, 'duration_min', duration_min,
+           'open', open and current_date <= coalesce(closes_on, event_date + 7) and current_date >= event_date - 1)
+    from public.cert_events where code = lower(trim(p_code));
+$$;
+
+-- emite (ou devolve o já emitido para o mesmo e-mail, corrigindo o nome)
+create or replace function public.issue_certificate(p_code text, p_name text, p_email text) returns jsonb
+language plpgsql volatile security definer set search_path = public, private as $$
+declare ev public.cert_events; c public.certificates; nm text; em text; fresh boolean := false;
+begin
+  select * into ev from public.cert_events where code = lower(trim(p_code));
+  if ev.id is null then raise exception 'Evento não encontrado. Confira o QR Code.' using errcode = 'P0002'; end if;
+  if not (ev.open and current_date <= coalesce(ev.closes_on, ev.event_date + 7) and current_date >= ev.event_date - 1) then
+    raise exception 'A emissão de certificados deste evento está encerrada.' using errcode = '23514';
+  end if;
+  nm := regexp_replace(trim(coalesce(p_name, '')), '\s+', ' ', 'g');
+  em := lower(trim(coalesce(p_email, '')));
+  if char_length(nm) < 3 or nm !~ '\s' then raise exception 'Informe seu nome completo.' using errcode = '23514'; end if;
+  if char_length(nm) > 80 then raise exception 'Nome muito longo.' using errcode = '23514'; end if;
+  if em !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'Informe um e-mail válido.' using errcode = '23514'; end if;
+
+  select * into c from public.certificates where event_id = ev.id and lower(email) = em;
+  if c.id is null then
+    if (select count(*) from public.certificates where event_id = ev.id) >= 3000 then
+      raise exception 'Limite de certificados deste evento atingido. Fale com a organização.' using errcode = '23514';
+    end if;
+    insert into public.certificates (event_id, code, name, email)
+    values (ev.id, 'SC-' || to_char(ev.event_date, 'YYYY') || '-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6)), nm, em)
+    returning * into c;
+    fresh := true;
+  elsif c.name <> nm then
+    update public.certificates set name = nm where id = c.id returning * into c;
+  end if;
+  if fresh then perform private.notify('certificado_emitido', c.id); end if;
+  return jsonb_build_object('code', c.code, 'name', c.name, 'issued_at', c.created_at,
+    'company_name', ev.company_name, 'event_name', ev.event_name, 'talk_title', ev.talk_title,
+    'speaker_name', ev.speaker_name, 'event_date', ev.event_date, 'duration_min', ev.duration_min);
+end $$;
+
+-- confere um certificado pelo código (não mostra o e-mail)
+create or replace function public.verify_certificate(p_code text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('code', c.code, 'name', c.name, 'issued_at', c.created_at,
+           'company_name', ev.company_name, 'event_name', ev.event_name, 'talk_title', ev.talk_title,
+           'speaker_name', ev.speaker_name, 'event_date', ev.event_date, 'duration_min', ev.duration_min)
+    from public.certificates c join public.cert_events ev on ev.id = c.event_id
+   where c.code = upper(trim(p_code));
+$$;
+
+revoke execute on function public.cert_event_info(text), public.issue_certificate(text, text, text), public.verify_certificate(text) from public;
+grant execute on function public.cert_event_info(text), public.issue_certificate(text, text, text), public.verify_certificate(text) to anon, authenticated;

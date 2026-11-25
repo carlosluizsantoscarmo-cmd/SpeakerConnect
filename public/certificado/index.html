@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Certificado | SpeakerConnect</title>
+<meta name="description" content="Emita ou confira um certificado de participação em palestra da SpeakerConnect.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1B1A4B">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-48.png" sizes="48x48" type="image/png">
+<link rel="apple-touch-icon" href="/favicon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1B1A4B;--brand:#2A2970;--gold:#F5B841;--gold-d:#C88A12;--mut:#5B5E7A;--line:#E3E2F0;--paper:#F6F5FB}
+*{box-sizing:border-box}
+body{margin:0;font-family:Poppins,system-ui,sans-serif;background:var(--paper);color:var(--ink)}
+header{background:var(--ink);color:#fff}
+header .w{max-width:960px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:12px}
+header a{color:#fff;text-decoration:none;display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px}
+.mic{width:36px;height:36px;border-radius:10px;background:var(--gold);display:grid;place-items:center;flex:none}
+main{max-width:960px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:26px;line-height:1.2;margin:0 0 6px}
+p{line-height:1.55}
+.mut{color:var(--mut)}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px}
+.ev{display:grid;gap:4px;margin:14px 0 18px}
+.ev b{font-size:18px}
+label{display:block;font-weight:500;font-size:14px;margin:14px 0 6px}
+input[type=text],input[type=email]{width:100%;font:500 16px Poppins,sans-serif;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+input:focus{outline:2px solid var(--gold);border-color:var(--gold)}
+.chk{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--mut);margin-top:14px;line-height:1.45}
+.chk input{margin-top:3px;width:18px;height:18px;flex:none}
+button,.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:999px;padding:13px 22px;font:700 15px Poppins,sans-serif;background:var(--ink);color:#fff;cursor:pointer;text-decoration:none}
+button.gold{background:var(--gold);color:var(--ink)}
+button.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
+button:disabled{opacity:.6;cursor:wait}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.err{background:#FDECEC;color:#9B1C1C;border-radius:12px;padding:12px 14px;margin-top:14px;font-size:14px}
+.ok{display:inline-flex;align-items:center;gap:8px;background:#E7F6EC;color:#1F6B3A;border-radius:999px;padding:6px 14px;font-weight:700;font-size:14px}
+.prev{margin-top:18px;border-radius:12px;overflow:hidden;box-shadow:0 12px 40px rgba(27,26,75,.18);background:#fff}
+.prev .scale{transform-origin:0 0}
+.small{font-size:13px}
+footer{text-align:center;color:var(--mut);font-size:13px;padding:0 16px 32px}
+footer a{color:var(--mut)}
+/* ---- certificado (tamanho real 1754x1240, A4 deitado a 150 dpi) ---- */
+.cert{width:1754px;height:1240px;position:relative;overflow:hidden;font-family:Poppins,sans-serif;color:#1B1A4B;background:radial-gradient(ellipse 70% 62% at 50% 50%,#ffffff 0%,#F4F3FB 45%,#3B3A86 85%,#1B1A4B 100%)}
+.cert svg.bg{position:absolute;inset:0}
+.cert .head{position:absolute;top:70px;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:40px;color:#fff}
+.cert .brand{display:flex;align-items:center;gap:18px}
+.cert .bmic{width:78px;height:78px;border-radius:20px;background:#F5B841;display:grid;place-items:center}
+.cert .brand b{font-size:46px;font-weight:700;letter-spacing:-.5px;display:block;line-height:1}
+.cert .brand small{font-size:15px;letter-spacing:5px;color:#CFCDEB;font-weight:500}
+.cert .sep{width:2px;height:78px;background:rgba(255,255,255,.5)}
+.cert .real{font-size:15px;letter-spacing:5px;color:#CFCDEB;font-weight:500;text-align:left;line-height:1.6;max-width:560px}
+.cert .real b{display:block;color:#fff;font-size:26px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cert .mid{position:absolute;top:285px;left:120px;right:120px;text-align:center}
+.cert h2{font-size:68px;font-weight:700;margin:0;color:#1B1A4B;letter-spacing:1px}
+.cert h2 span{color:#C88A12}
+.cert .l{font-size:30px;color:#4A4D6A;margin-top:40px}
+.cert .name{font-size:64px;font-weight:700;margin-top:6px;color:#1B1A4B;white-space:nowrap}
+.cert .tt{font-size:36px;font-weight:500;color:#C88A12;margin-top:34px;line-height:1.25}
+.cert .sp{font-size:28px;color:#33365A;margin-top:10px}
+.cert .dt{font-size:30px;color:#4A4D6A;margin-top:24px}
+.cert .signs{position:absolute;top:925px;left:0;right:0;display:flex;justify-content:center;gap:120px}
+.cert .signs div{width:420px;border-top:3px solid #1B1A4B;padding-top:12px;text-align:center;font-size:26px;font-weight:700}
+.cert .signs small{display:block;font-weight:400;font-size:20px;color:#4A4D6A}
+.cert .foot{position:absolute;right:70px;bottom:24px;font-size:17px;letter-spacing:3px;color:#F5B841;font-weight:500;text-align:right;line-height:1.6}
+.cert .code{position:absolute;left:70px;bottom:24px;font-size:17px;color:#CFCDEB;line-height:1.6}
+.cert .code b{color:#fff}
+#stage{position:fixed;left:-20000px;top:0}
+</style>
+</head>
+<body>
+<header><div class="w"><a href="/"><span class="mic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1B1A4B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg></span>SpeakerConnect</a></div></header>
+<main id="main"><p class="mut">Carregando…</p></main>
+<footer>SpeakerConnect · Conectando mentes, transformando negócios · <a href="/privacidade.html">Privacidade</a></footer>
+<div id="stage" aria-hidden="true"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2"></script>
+<script src="/config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  var C = window.SC || {}, main = document.getElementById("main"), sb = null;
+  function $(id) { return document.getElementById(id); }
+  function e(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function br(d) { return d ? String(d).slice(0, 10).split("-").reverse().join("/") : ""; }
+  function dur(m) { if (!m) return ""; var h = Math.floor(m / 60), r = m % 60; return h ? h + "h" + (r ? String(r).padStart(2, "0") : "") : r + " min"; }
+  function msg(err) { var m = String((err && (err.message || err.error_description)) || err || ""); return m.replace(/^.*?ERROR:\s*/, "") || "Não foi possível concluir. Tente de novo."; }
+
+  var dots = function (x, y, cols) {
+    var s = '<g transform="translate(' + x + "," + y + ')">';
+    for (var r = 0; r < 7; r++) for (var c = 0; c < cols; c++) s += '<circle cx="' + (10 + c * 26) + '" cy="' + (10 + r * 26) + '" r="5" fill="#F5B841" opacity="' + (0.25 + ((r + c) % 5) * 0.12).toFixed(2) + '"/>';
+    return s + "</g>";
+  };
+  function certHTML(d) {
+    var line = "ministrada por <b>" + e(d.speaker_name) + "</b>" + (d.event_name ? " durante " + e(d.event_name) : "") + (d.duration_min ? " · duração de " + dur(d.duration_min) : "");
+    return '<div class="cert"><svg class="bg" viewBox="0 0 1754 1240" preserveAspectRatio="none">' +
+      '<path d="M0 0 H700 C520 40 380 160 330 420 C300 560 200 660 0 700 Z" fill="#2A2970" opacity=".85"/>' +
+      '<path d="M0 0 H420 C300 60 220 180 200 360 C185 470 110 540 0 560 Z" fill="#1B1A4B"/>' +
+      '<path d="M1754 1240 H1000 C1250 1200 1420 1100 1500 900 C1560 760 1660 700 1754 680 Z" fill="#2A2970" opacity=".85"/>' +
+      '<path d="M0 1240 V1045 C300 1120 700 1140 1100 1118 C1350 1102 1560 1062 1754 990 V1240 Z" fill="#1B1A4B"/>' +
+      '<path d="M0 1072 C320 1138 760 1152 1160 1128 C1420 1110 1600 1070 1754 1012" fill="none" stroke="#F5B841" stroke-width="7"/>' +
+      '<path d="M1754 0 V420 C1640 330 1560 200 1540 0 Z" fill="#1B1A4B" opacity=".9"/>' + dots(1440, 40, 10) + dots(40, 760, 7) + "</svg>" +
+      '<div class="head"><div class="brand"><div class="bmic"><svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#1B1A4B" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg></div><div><b>SpeakerConnect</b><small>PALESTRANTES PARA EMPRESAS</small></div></div>' +
+      '<div class="sep"></div><div class="real">REALIZAÇÃO<b>' + e(d.company_name) + "</b></div></div>" +
+      '<div class="mid"><h2>CERTIFICADO DE <span>PARTICIPAÇÃO</span></h2><div class="l">Certificamos que</div>' +
+      '<div class="name" data-fit="1240">' + e(d.name) + '</div><div class="l" style="margin-top:22px">participou da palestra</div>' +
+      '<div class="tt">' + e(d.talk_title) + '</div><div class="sp" data-fit="1300">' + line + '</div><div class="dt">no dia ' + br(d.event_date) + ".</div></div>" +
+      '<div class="signs"><div>' + e(d.speaker_name) + "<small>Palestrante</small></div><div>SpeakerConnect<small>speakerconnect.com.br</small></div></div>" +
+      '<div class="code">Verifique em <b>speakerconnect.com.br/certificado</b><br>Código: ' + e(d.code) + "</div>" +
+      '<div class="foot">CONECTANDO MENTES,<br>TRANSFORMANDO NEGÓCIOS</div></div>';
+  }
+  // diminui a letra de nomes e linhas longas até caberem
+  function fit(root) {
+    root.querySelectorAll("[data-fit]").forEach(function (el) {
+      var max = Number(el.getAttribute("data-fit")), fs = parseFloat(getComputedStyle(el).fontSize);
+      el.style.whiteSpace = "nowrap";
+      while (el.scrollWidth > max && fs > 18) { fs -= 2; el.style.fontSize = fs + "px"; }
+    });
+    var tt = root.querySelector(".tt"), f2 = 36;
+    while (tt && tt.offsetHeight > 100 && f2 > 22) { f2 -= 2; tt.style.fontSize = f2 + "px"; }
+  }
+  function preview(holder, d) {
+    holder.innerHTML = '<div class="scale">' + certHTML(d) + "</div>";
+    var sc = holder.querySelector(".scale");
+    var size = function () { var k = holder.clientWidth / 1754; sc.style.transform = "scale(" + k + ")"; holder.style.height = Math.round(1240 * k) + "px"; };
+    size(); window.addEventListener("resize", size);
+    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(function () { fit(sc); size(); });
+  }
+  function render(d) {
+    var st = $("stage"); st.innerHTML = certHTML(d);
+    return (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(function () {
+      fit(st);
+      return window.html2canvas(st.firstChild, { scale: 1.5, backgroundColor: null, logging: false, useCORS: true });
+    });
+  }
+  function fileName(d) { return "certificado-" + String(d.name).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + ".pdf"; }
+  function downloadPDF(d, btn) {
+    btn.disabled = true; var t = btn.textContent; btn.textContent = "Gerando PDF…";
+    render(d).then(function (cv) {
+      var pdf = new window.jspdf.jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      pdf.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 297, 210);
+      pdf.setProperties({ title: "Certificado - " + d.name, subject: d.talk_title, author: "SpeakerConnect" });
+      pdf.save(fileName(d));
+    }).catch(function () { window.alert("Não foi possível gerar o PDF neste aparelho. Tente baixar como imagem."); })
+      .then(function () { btn.disabled = false; btn.textContent = t; });
+  }
+  function downloadPNG(d, btn) {
+    btn.disabled = true; var t = btn.textContent; btn.textContent = "Gerando imagem…";
+    render(d).then(function (cv) {
+      var a = document.createElement("a"); a.href = cv.toDataURL("image/png"); a.download = fileName(d).replace(/\.pdf$/, ".png"); a.click();
+    }).catch(function () { window.alert("Não foi possível gerar a imagem."); }).then(function () { btn.disabled = false; btn.textContent = t; });
+  }
+  function showCert(d, head) {
+    main.innerHTML = head + '<div class="row"><button class="gold" id="pdf">Baixar certificado (PDF)</button><button class="ghost" id="png">Baixar como imagem</button></div>' +
+      '<div class="prev" id="prev"></div>' +
+      '<p class="mut small" style="margin-top:14px">Código de verificação: <b>' + e(d.code) + "</b>. Qualquer pessoa pode conferir em speakerconnect.com.br/certificado.</p>" +
+      '<div class="card" style="margin-top:18px"><b>Compartilhe no LinkedIn</b><p class="mut small" style="margin:6px 0 0">Baixe a imagem e publique contando o que você aprendeu na palestra. Marque a SpeakerConnect e ' + e(d.speaker_name) + "!</p></div>";
+    preview($("prev"), d);
+    $("pdf").onclick = function () { downloadPDF(d, this); };
+    $("png").onclick = function () { downloadPNG(d, this); };
+  }
+
+  // ---- telas ----
+  function screenIssue(code) {
+    sb.rpc("cert_event_info", { p_code: code }).then(function (r) {
+      var ev = r.data;
+      if (r.error || !ev) { main.innerHTML = '<h1>Evento não encontrado</h1><p class="mut">Confira se o QR Code foi lido inteiro, ou peça o link à organização.</p>'; return; }
+      var info = '<div class="ev"><span class="mut small">' + e(ev.company_name) + (ev.event_name ? " · " + e(ev.event_name) : "") + " · " + br(ev.event_date) + "</span><b>" + e(ev.talk_title) + '</b><span class="mut">com ' + e(ev.speaker_name) + "</span></div>";
+      if (!ev.open) { main.innerHTML = "<h1>Certificado de participação</h1>" + info + '<div class="err">A emissão de certificados deste evento está encerrada. Se você participou, fale com a organização.</div>'; return; }
+      main.innerHTML = '<div class="card"><h1>Seu certificado de participação</h1>' + info +
+        '<form id="f" novalidate><label for="nm">Nome completo (como vai aparecer no certificado)</label><input type="text" id="nm" autocomplete="name" maxlength="80" required>' +
+        '<label for="em">E-mail (enviamos uma cópia do certificado)</label><input type="email" id="em" autocomplete="email" inputmode="email" maxlength="160" required>' +
+        '<label class="chk"><input type="checkbox" id="ok"> <span>Autorizo o uso do meu nome e e-mail para emitir e enviar este certificado. A empresa organizadora pode ver quem emitiu. <a href="/privacidade.html" target="_blank">Privacidade</a></span></label>' +
+        '<div id="er"></div><div class="row"><button class="gold" id="go">Gerar meu certificado</button></div></form></div>';
+      $("f").onsubmit = function (ev2) {
+        ev2.preventDefault();
+        var nm = $("nm").value.trim(), em = $("em").value.trim(), er = $("er");
+        er.innerHTML = "";
+        if (nm.split(/\s+/).length < 2) { er.innerHTML = '<div class="err">Informe seu nome e sobrenome.</div>'; return; }
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { er.innerHTML = '<div class="err">Informe um e-mail válido.</div>'; return; }
+        if (!$("ok").checked) { er.innerHTML = '<div class="err">Marque a autorização para continuar.</div>'; return; }
+        var b = $("go"); b.disabled = true; b.textContent = "Gerando…";
+        sb.rpc("issue_certificate", { p_code: code, p_name: nm, p_email: em }).then(function (r2) {
+          if (r2.error || !r2.data) { b.disabled = false; b.textContent = "Gerar meu certificado"; er.innerHTML = '<div class="err">' + e(msg(r2.error)) + "</div>"; return; }
+          try { history.replaceState(null, "", "/certificado/?c=" + encodeURIComponent(r2.data.code)); } catch (x) {}
+          showCert(r2.data, '<span class="ok">✓ Certificado emitido</span><h1 style="margin-top:12px">Parabéns, ' + e(String(r2.data.name).split(" ")[0]) + '!</h1><p class="mut">Também enviamos o link para ' + e(em) + ".</p>");
+        });
+      };
+    });
+  }
+  function screenVerify(code) {
+    sb.rpc("verify_certificate", { p_code: code }).then(function (r) {
+      if (r.error || !r.data) { screenLookup(code, "Não encontramos um certificado com este código."); return; }
+      showCert(r.data, '<span class="ok">✓ Certificado válido</span><h1 style="margin-top:12px">' + e(r.data.name) + '</h1><p class="mut">Participou de "' + e(r.data.talk_title) + '", com ' + e(r.data.speaker_name) + ", em " + br(r.data.event_date) + " (" + e(r.data.company_name) + ").</p>");
+    });
+  }
+  function screenLookup(prefill, error) {
+    main.innerHTML = '<div class="card"><h1>Conferir certificado</h1><p class="mut">Digite o código que aparece no canto do certificado (ex.: SC-2026-AB12CD).</p>' +
+      '<form id="f"><label for="cd">Código</label><input type="text" id="cd" maxlength="20" autocapitalize="characters" value="' + e(prefill || "") + '">' +
+      (error ? '<div class="err">' + e(error) + "</div>" : "") + '<div class="row"><button id="go">Conferir</button></div></form></div>' +
+      '<p class="mut small" style="margin-top:18px">Participou de uma palestra e quer emitir seu certificado? Use o QR Code ou o link que a organização mostrou no evento.</p>';
+    $("f").onsubmit = function (ev) { ev.preventDefault(); var c = $("cd").value.trim(); if (c) { try { history.replaceState(null, "", "/certificado/?c=" + encodeURIComponent(c)); } catch (x) {} screenVerify(c); } };
+  }
+
+  var ok = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(C.supabaseUrl || "") && C.supabaseKey && window.supabase;
+  if (!ok) { main.innerHTML = '<p class="mut">Página em manutenção. Tente mais tarde.</p>'; return; }
+  sb = window.supabase.createClient(C.supabaseUrl, C.supabaseKey, { auth: { persistSession: false } });
+  var q = new URLSearchParams(location.search), ev = q.get("e"), cd = q.get("c");
+  if (ev && /^[0-9a-f]{8}$/i.test(ev)) screenIssue(ev.toLowerCase());
+  else if (cd) screenVerify(cd);
+  else screenLookup("");
+})();
+</script>
+</body>
+</html>

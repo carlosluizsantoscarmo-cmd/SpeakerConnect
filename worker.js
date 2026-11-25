@@ -602,6 +602,7 @@ async function pagamentoGet({ request, env, ctx }) {
 }
 
 // ---------- POST /api/aviso (vem do Supabase) ----------
+const ymdBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "");
 export async function buildNotice(env, request, type, id) {
   const site = siteUrl(env, request);
   const foot = footer(env, request);
@@ -629,6 +630,18 @@ export async function buildNotice(env, request, type, id) {
     return [{ to: p.email, subject: `Seu perfil precisa de ajustes - ${BRAND}`,
       text: `Olá, ${first(p.name)}!\n\nRevisamos seu perfil e ele ainda não pôde ser publicado.` + (sp.review_note ? `\n\nO que ajustar: ${line(sp.review_note, 600)}` : "") +
             `\n\nFaça os ajustes no app e envie de novo para análise.` + foot }];
+  }
+
+  if (type === "certificado_emitido") {
+    const c = await one(env, `/rest/v1/certificates?id=eq.${id}&select=code,name,email,event_id`);
+    const ev = c && (await one(env, `/rest/v1/cert_events?id=eq.${c.event_id}&select=talk_title,speaker_name,company_name,event_date`));
+    if (!c || !ev) return [];
+    return [{ to: c.email, subject: `Seu certificado: ${line(ev.talk_title, 80)}`,
+      text: `Olá, ${first(c.name)}!\n\nSeu certificado de participação na palestra "${line(ev.talk_title, 160)}", com ${line(ev.speaker_name, 80)}, ` +
+            `realizada por ${line(ev.company_name, 120)} em ${ymdBR(ev.event_date)}, está pronto.\n\n` +
+            `Baixar o certificado (PDF): ${site}/certificado/?c=${encodeURIComponent(c.code)}\n\nCódigo de verificação: ${c.code}\n\n` +
+            `Se o nome estiver errado, abra o QR Code do evento de novo e informe o mesmo e-mail com o nome certo.\n\n` +
+            `Você recebe este e-mail porque pediu um certificado no ${BRAND}.` }];
   }
 
   if (type === "logo_para_analise") {
