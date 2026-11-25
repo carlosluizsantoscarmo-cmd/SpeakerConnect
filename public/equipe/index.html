@@ -114,6 +114,7 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="/config.js"></script>
 <script src="/captcha.js"></script>
+<script src="/ptr.js"></script>
 <script>
 (function () {
   "use strict";
@@ -248,6 +249,7 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
     });
   }
   function refresh() { return loadAll().then(render).catch(function (err) { main.innerHTML = '<div class="err">Erro ao carregar: ' + e(err.message) + "</div>"; }); }
+  window.scRefresh = refresh; // puxar para atualizar (ptr.js)
 
   // ---------- palestrantes ----------
   var SST = { draft: ["Rascunho", ""], pending: ["Para aprovar", "warn"], approved: ["Publicado", "ok"], rejected: ["Recusado", "err"], suspended: ["Suspenso", "err"] };
