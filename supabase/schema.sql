@@ -988,6 +988,24 @@ create policy certificates_admin on public.certificates for all to authenticated
 revoke all on public.cert_events, public.certificates from anon;
 grant select, insert, update, delete on public.cert_events, public.certificates to authenticated;
 
+-- Assinatura do palestrante para os certificados: fica numa tabela própria (não sai na lista pública de palestrantes).
+-- O palestrante envia uma vez no app; entra sozinha em todo certificado dos eventos dele (cert_events.speaker_id).
+create table if not exists public.speaker_signatures (
+  speaker_id  uuid primary key references public.speakers(id) on delete cascade,
+  url         text not null,
+  updated_at  timestamptz not null default now(),
+  constraint speaker_signatures_url_check check (
+    url ~ '^https://[a-z0-9-]+\.supabase\.co/storage/v1/object/public/fotos/'
+    and position('/fotos/' || speaker_id::text || '/' in url) > 0)
+);
+alter table public.speaker_signatures enable row level security;
+drop policy if exists speaker_signatures_own on public.speaker_signatures;
+create policy speaker_signatures_own on public.speaker_signatures for all to authenticated
+  using (speaker_id = auth.uid() or public.is_admin()) with check (speaker_id = auth.uid() or public.is_admin());
+revoke all on public.speaker_signatures from anon;
+grant select, insert, update, delete on public.speaker_signatures to authenticated;
+alter table public.cert_events add column if not exists speaker_id uuid references public.speakers(id) on delete set null;
+
 -- dados públicos de um evento (para a tela de emissão)
 create or replace function public.cert_event_info(p_code text) returns jsonb
 language sql stable security definer set search_path = public as $$
@@ -1028,7 +1046,8 @@ begin
   if fresh then perform private.notify('certificado_emitido', c.id); end if;
   return jsonb_build_object('code', c.code, 'name', c.name, 'issued_at', c.created_at,
     'company_name', ev.company_name, 'event_name', ev.event_name, 'talk_title', ev.talk_title,
-    'speaker_name', ev.speaker_name, 'event_date', ev.event_date, 'duration_min', ev.duration_min);
+    'speaker_name', ev.speaker_name, 'event_date', ev.event_date, 'duration_min', ev.duration_min,
+    'speaker_signature', (select url from public.speaker_signatures where speaker_id = ev.speaker_id));
 end $$;
 
 -- confere um certificado pelo código (não mostra o e-mail)
@@ -1036,7 +1055,8 @@ create or replace function public.verify_certificate(p_code text) returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object('code', c.code, 'name', c.name, 'issued_at', c.created_at,
            'company_name', ev.company_name, 'event_name', ev.event_name, 'talk_title', ev.talk_title,
-           'speaker_name', ev.speaker_name, 'event_date', ev.event_date, 'duration_min', ev.duration_min)
+           'speaker_name', ev.speaker_name, 'event_date', ev.event_date, 'duration_min', ev.duration_min,
+           'speaker_signature', (select url from public.speaker_signatures where speaker_id = ev.speaker_id))
     from public.certificates c join public.cert_events ev on ev.id = c.event_id
    where c.code = upper(trim(p_code));
 $$;

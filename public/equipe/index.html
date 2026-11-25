@@ -568,7 +568,8 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
       '<form id="cform" hidden style="background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:16px;display:grid;gap:10px;max-width:640px">' +
       (qs.length ? '<label>Puxar dados de um pedido (opcional)<br><select id="cq" style="width:100%"><option value="">— preencher à mão —</option>' + qs.map(function (q) { return '<option value="' + q.id + '">' + e(q.title) + " · " + e(q.company_name) + " → " + e(q.speaker_name) + (q.event_date ? " · " + ymd(q.event_date) : "") + "</option>"; }).join("") + "</select></label>" : "") +
       '<label>Título da palestra<br><input id="ct" maxlength="160" style="width:100%" placeholder="Ex.: Liderança que gera resultados"></label>' +
-      '<label>Palestrante<br><input id="cs" maxlength="80" style="width:100%"></label>' +
+      '<label>Palestrante<br><select id="csp" style="width:100%"><option value="">— escolha (a assinatura dele entra no certificado) —</option>' + data.speakers.filter(function (x) { return x.status === "approved"; }).map(function (x) { return '<option value="' + x.id + '">' + e(x.public_name) + "</option>"; }).join("") + '<option value="outro">Outro (não cadastrado)</option></select></label>' +
+      '<label id="csl" hidden>Nome do palestrante<br><input id="cs" maxlength="80" style="width:100%"></label>' +
       '<label>Empresa (aparece como "Realização")<br><input id="cc" maxlength="120" style="width:100%"></label>' +
       '<label>Nome do evento (opcional)<br><input id="ce" maxlength="120" style="width:100%" placeholder="Ex.: SIPAT 2027, Reunião de Fechamento do Ano"></label>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap"><label>Data<br><input id="cd" type="date"></label><label>Duração (min)<br><input id="cm" type="number" min="10" max="1440" step="5" value="60" style="width:110px"></label></div>' +
@@ -591,12 +592,17 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
     if ($("cq")) $("cq").onchange = function () {
       var q = data.quotes.filter(function (x) { return x.id === $("cq").value; })[0]; if (!q) return;
       var c = data.companies.filter(function (x) { return x.id === q.company_id; })[0];
-      $("cs").value = q.speaker_name || ""; $("cc").value = (c && c.company_name) || q.company_name || ""; $("ce").value = q.title || "";
+      $("csp").value = q.speaker_id || ""; $("cs").value = q.speaker_name || ""; $("csl").hidden = true; $("cc").value = (c && c.company_name) || q.company_name || ""; $("ce").value = q.title || "";
       $("cd").value = q.event_date || ""; $("cm").value = q.duration_min || 60; if (!$("ct").value) $("ct").focus();
+    };
+    $("csp").onchange = function () {
+      var v = $("csp").value, sp = data.speakers.filter(function (x) { return x.id === v; })[0];
+      $("csl").hidden = v !== "outro"; $("cs").value = sp ? sp.public_name : ""; if (v === "outro") $("cs").focus();
     };
     f.onsubmit = function (ev) {
       ev.preventDefault();
-      var row = { talk_title: $("ct").value.trim(), speaker_name: $("cs").value.trim(), company_name: $("cc").value.trim(), event_name: $("ce").value.trim() || null,
+      var spv = $("csp").value;
+      var row = { speaker_id: spv && spv !== "outro" ? spv : null, talk_title: $("ct").value.trim(), speaker_name: $("cs").value.trim(), company_name: $("cc").value.trim(), event_name: $("ce").value.trim() || null,
         event_date: $("cd").value, duration_min: Number($("cm").value) || null, quote_id: ($("cq") && $("cq").value) || null };
       if (row.talk_title.length < 3 || row.speaker_name.length < 2 || row.company_name.length < 2 || !row.event_date) { toast("Preencha título, palestrante, empresa e data."); return; }
       sb.from("cert_events").insert(row).select().single().then(function (r) { if (!fail(r)) { toast("Evento criado."); refresh().then(function () { poster(r.data); }); } });

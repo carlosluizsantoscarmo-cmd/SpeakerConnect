@@ -25,5 +25,7 @@ window.SC = {
   // Vazio = não mede. Se a medição automática do Cloudflare já estiver ligada, deixe vazio para não contar em dobro.
   cfBeacon: "",
   // Tag do Google Ads (conta 579-705-4625). Conta como conversão quem chega em /obrigado. Vazio = desligado.
-  googleAds: "AW-18588382651"
+  googleAds: "AW-18588382651",
+  // Assinatura da SpeakerConnect nos certificados (PNG transparente em /midia/). Vazio = só o nome.
+  certSignature: ""
 };

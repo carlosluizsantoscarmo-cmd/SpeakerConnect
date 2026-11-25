@@ -6,7 +6,7 @@
   var C = window.SC || {};
   var app = document.getElementById("app");
   var TERMS = "2026-11-v2", SPEAKER_TERMS = "2026-11-v3";
-  var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false, mpConn = null, myDoc = null, payActive = false, payTimer = null;
+  var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false, mpConn = null, myDoc = null, mySig = null, payActive = false, payTimer = null;
 
   // ---------- utilidades ----------
   function e(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -295,8 +295,9 @@
       if (!profile) return null;
       if (profile.role === "speaker") return Promise.all([
         sb.from("speakers").select("*").eq("id", user.id).maybeSingle(),
-        sb.from("speaker_documents").select("*").eq("speaker_id", user.id).maybeSingle()
-      ]).then(function (r) { me = r[0].data; myDoc = r[1].data || null; });
+        sb.from("speaker_documents").select("*").eq("speaker_id", user.id).maybeSingle(),
+        sb.from("speaker_signatures").select("url").eq("speaker_id", user.id).maybeSingle()
+      ]).then(function (r) { me = r[0].data; myDoc = r[1].data || null; mySig = (r[2] && r[2].data && r[2].data.url) || null; });
       if (profile.role === "company") return sb.from("companies").select("*").eq("id", user.id).maybeSingle().then(function (c) { me = c.data; });
     });
   }
@@ -817,6 +818,82 @@
       img.src = url;
     });
   }
+  // ---------- assinatura para os certificados ----------
+  // Foto da assinatura num papel branco ou desenhada com o dedo: vira PNG transparente, recortado na tinta.
+  function inkPNG(src) {
+    var w = src.width, h = src.height, ctx = src.getContext("2d"), px = ctx.getImageData(0, 0, w, h), d = px.data;
+    var minX = w, minY = h, maxX = -1, maxY = -1;
+    for (var i = 0; i < d.length; i += 4) {
+      var lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2], a = d[i + 3] / 255;
+      var ink = a * Math.max(0, Math.min(1, (200 - lum) / 110)); // escuro = tinta; claro = some
+      d[i] = 27; d[i + 1] = 26; d[i + 2] = 75; d[i + 3] = Math.round(ink * 255);
+      if (ink > 0.25) { var p = i / 4, x = p % w, y = (p - x) / w; if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    }
+    if (maxX < 0 || (maxX - minX) < 20) return Promise.reject(new Error("Não encontrei a assinatura na imagem. Use caneta escura num papel branco."));
+    ctx.putImageData(px, 0, 0);
+    var pad = 12; minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad); maxX = Math.min(w - 1, maxX + pad); maxY = Math.min(h - 1, maxY + pad);
+    var cw = maxX - minX + 1, ch = maxY - minY + 1, k = Math.min(1, 900 / cw, 320 / ch);
+    var out = document.createElement("canvas"); out.width = Math.round(cw * k); out.height = Math.round(ch * k);
+    out.getContext("2d").drawImage(src, minX, minY, cw, ch, 0, 0, out.width, out.height);
+    return new Promise(function (res, rej) { out.toBlob(function (b) { b ? res(b) : rej(new Error("imagem")); }, "image/png"); });
+  }
+  function fileToCanvas(file) {
+    return new Promise(function (res, rej) {
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onload = function () { var k = Math.min(1, 1600 / Math.max(img.width, img.height)), cv = document.createElement("canvas"); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k); var c = cv.getContext("2d"); c.fillStyle = "#fff"; c.fillRect(0, 0, cv.width, cv.height); c.drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url); res(cv); };
+      img.onerror = function () { rej(new Error("Não consegui abrir essa imagem. Use JPG ou PNG.")); };
+      img.src = url;
+    });
+  }
+  function sigCard() {
+    return '<div class="card sigcard"><h3>Assinatura para certificados <span class="muted small" style="font-weight:400">(opcional)</span></h3>' +
+      '<p class="muted small" style="margin:4px 0 12px">Nas palestras fechadas pelo SpeakerConnect, cada participante recebe um certificado. Envie sua assinatura uma vez e ela entra sozinha em todos os seus certificados.</p>' +
+      '<div class="logobox" style="min-height:90px">' + (mySig ? '<img src="' + e(mySig) + '" alt="Sua assinatura" style="max-height:80px">' : '<span class="muted small">Sem assinatura: o certificado mostra só o seu nome.</span>') + "</div>" +
+      '<div id="sigpad" hidden style="margin-top:12px"><canvas id="sigcv" style="width:100%;height:180px;border:1.5px dashed var(--line);border-radius:14px;background:#fff;touch-action:none"></canvas>' +
+      '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button type="button" class="btn slim" id="sigok">Usar esta assinatura</button><button type="button" class="btn slim ghost" id="sigclr">Limpar</button><button type="button" class="btn slim ghost" id="sigx">Cancelar</button></div></div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap" id="sigacts"><button type="button" class="btn slim ghost" id="sigdraw">Assinar com o dedo</button>' +
+      '<label for="sigf" class="btn slim ghost" style="margin:0;cursor:pointer">Enviar foto da assinatura</label><input id="sigf" type="file" accept="image/jpeg,image/png,image/webp" hidden>' +
+      (mySig ? '<button type="button" class="btn slim ghost" id="sigdel">Remover</button>' : "") + "</div>" +
+      '<p class="hint">Para foto: assine com caneta preta ou azul num papel branco e fotografe de perto, com boa luz.</p></div>';
+  }
+  function refreshSig() { var el = document.querySelector(".sigcard"); if (!el) return; el.outerHTML = sigCard(); bindSig(); }
+  function saveSig(blob) {
+    toast("Salvando assinatura…");
+    var path = user.id + "/assinatura-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10) + ".png";
+    return sb.storage.from("fotos").upload(path, blob, { contentType: "image/png", upsert: false }).then(function (r) {
+      if (r.error) throw r.error;
+      var url = sb.storage.from("fotos").getPublicUrl(path).data.publicUrl;
+      return sb.from("speaker_signatures").upsert({ speaker_id: user.id, url: url, updated_at: new Date().toISOString() }).then(function (u) {
+        if (u.error) throw u.error; mySig = url; toast("Assinatura salva."); refreshSig();
+      });
+    }).catch(function (x) { toast(friendly(x)); });
+  }
+  function bindSig() {
+    if (!$("sigdraw")) return;
+    var cv = $("sigcv"), ctx = null, drawing = false, drew = false, last = null;
+    function setup() {
+      var r = cv.getBoundingClientRect(), k = window.devicePixelRatio || 1;
+      cv.width = Math.round(r.width * k); cv.height = Math.round(r.height * k);
+      ctx = cv.getContext("2d"); ctx.setTransform(k, 0, 0, k, 0, 0); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, r.width, r.height);
+      ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#111"; drew = false;
+    }
+    function pt(ev) { var r = cv.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
+    cv.onpointerdown = function (ev) { drawing = true; last = pt(ev); cv.setPointerCapture(ev.pointerId); ev.preventDefault(); };
+    cv.onpointermove = function (ev) { if (!drawing) return; var p = pt(ev); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; drew = true; ev.preventDefault(); };
+    cv.onpointerup = cv.onpointercancel = function () { drawing = false; };
+    $("sigdraw").onclick = function () { $("sigpad").hidden = false; $("sigacts").hidden = true; setup(); };
+    $("sigclr").onclick = setup;
+    $("sigx").onclick = function () { $("sigpad").hidden = true; $("sigacts").hidden = false; };
+    $("sigok").onclick = function () { if (!drew) { toast("Faça sua assinatura no quadro."); return; } inkPNG(cv).then(saveSig, function (x) { toast(friendly(x)); }); };
+    $("sigf").onchange = function () {
+      var f = this.files && this.files[0]; if (!f) return;
+      if (f.size > 15 * 1024 * 1024) { toast("Imagem muito grande."); return; }
+      fileToCanvas(f).then(inkPNG).then(saveSig).catch(function (x) { toast(friendly(x)); });
+    };
+    if ($("sigdel")) $("sigdel").onclick = function () {
+      sb.from("speaker_signatures").delete().eq("speaker_id", user.id).then(function (r) { if (r.error) { toast(friendly(r.error)); return; } mySig = null; toast("Assinatura removida."); refreshSig(); });
+    };
+  }
   // ---------- documento de identidade e termo do palestrante (área privada) ----------
   function docCard() {
     var d = myDoc || {};
@@ -897,7 +974,7 @@
         '<div class="card"><label for="vd" style="margin-top:0">Vídeo <span class="opt">(link do YouTube ou Vimeo)</span></label><input id="vd" type="url" inputmode="url" maxlength="300" value="' + e(s.video_url || "") + '" placeholder="https://youtube.com/…">' +
         '<p class="hint" id="vdh">Só aparecem no perfil vídeos do <b>YouTube</b> ou do <b>Vimeo</b>. Links do Instagram, TikTok ou Google Drive não funcionam: publique o vídeo no YouTube (pode ser "não listado") e cole o link aqui.</p>' +
         '<p class="hint">Para sua segurança e a da empresa, o perfil não mostra telefone, e-mail, redes sociais nem links. Os contatos são liberados depois do pagamento.</p></div>' +
-        docCard() +
+        docCard() + sigCard() +
         '<div id="msg" role="alert"></div><button class="full" id="save">Salvar</button>' +
         (s.status === "draft" || s.status === "rejected" ? '<button class="full spot" type="button" id="submit">Salvar e enviar para análise</button>' : "") +
         "</form>";
@@ -929,7 +1006,7 @@
           });
         }).catch(function (err) { toast(friendly(err)); });
       };
-      bindDoc();
+      bindDoc(); bindSig();
       function collect() {
         var catsOn = Array.prototype.map.call($("cats").querySelectorAll("input:checked"), function (i) { return i.value; });
         var formats = [];

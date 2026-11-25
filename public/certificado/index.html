@@ -64,8 +64,9 @@ footer a{color:var(--mut)}
 .cert .tt{font-size:36px;font-weight:500;color:#C88A12;margin-top:34px;line-height:1.25}
 .cert .sp{font-size:28px;color:#33365A;margin-top:10px}
 .cert .dt{font-size:30px;color:#4A4D6A;margin-top:24px}
-.cert .signs{position:absolute;top:925px;left:0;right:0;display:flex;justify-content:center;gap:120px}
-.cert .signs div{width:420px;border-top:3px solid #1B1A4B;padding-top:12px;text-align:center;font-size:26px;font-weight:700}
+.cert .signs{position:absolute;top:945px;left:0;right:0;display:flex;justify-content:center;gap:120px}
+.cert .signs div{position:relative;width:420px;border-top:3px solid #1B1A4B;padding-top:12px;text-align:center;font-size:26px;font-weight:700}
+.cert .signs img{position:absolute;left:50%;bottom:calc(100% - 14px);transform:translateX(-50%);max-width:380px;max-height:105px}
 .cert .signs small{display:block;font-weight:400;font-size:20px;color:#4A4D6A}
 .cert .foot{position:absolute;right:70px;bottom:24px;font-size:17px;letter-spacing:3px;color:#F5B841;font-weight:500;text-align:right;line-height:1.6}
 .cert .code{position:absolute;left:70px;bottom:24px;font-size:17px;color:#CFCDEB;line-height:1.6}
@@ -98,6 +99,11 @@ footer a{color:var(--mut)}
     for (var r = 0; r < 7; r++) for (var c = 0; c < cols; c++) s += '<circle cx="' + (10 + c * 26) + '" cy="' + (10 + r * 26) + '" r="5" fill="#F5B841" opacity="' + (0.25 + ((r + c) % 5) * 0.12).toFixed(2) + '"/>';
     return s + "</g>";
   };
+  // assinatura: só imagens do nosso Storage ou do próprio site
+  function sig(u) {
+    var ok = /^https:\/\/[a-z0-9-]+\.supabase\.co\/storage\/v1\/object\/public\/fotos\//.test(u || "") || /^\/midia\/[a-z0-9\/._-]+\.png$/.test(u || "");
+    return ok ? '<img src="' + e(u) + '" alt="" crossorigin="anonymous" onerror="this.remove()">' : "";
+  }
   function certHTML(d) {
     var line = "ministrada por <b>" + e(d.speaker_name) + "</b>" + (d.event_name ? " durante " + e(d.event_name) : "") + (d.duration_min ? " · duração de " + dur(d.duration_min) : "");
     return '<div class="cert"><svg class="bg" viewBox="0 0 1754 1240" preserveAspectRatio="none">' +
@@ -110,9 +116,9 @@ footer a{color:var(--mut)}
       '<div class="head"><div class="brand"><div class="bmic"><svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#1B1A4B" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg></div><div><b>SpeakerConnect</b><small>PALESTRANTES PARA EMPRESAS</small></div></div>' +
       '<div class="sep"></div><div class="real">REALIZAÇÃO<b>' + e(d.company_name) + "</b></div></div>" +
       '<div class="mid"><h2>CERTIFICADO DE <span>PARTICIPAÇÃO</span></h2><div class="l">Certificamos que</div>' +
-      '<div class="name" data-fit="1240">' + e(d.name) + '</div><div class="l" style="margin-top:22px">participou da palestra</div>' +
+      '<div class="name" data-fit="1100">' + e(d.name) + '</div><div class="l" style="margin-top:22px">participou da palestra</div>' +
       '<div class="tt">' + e(d.talk_title) + '</div><div class="sp" data-fit="1300">' + line + '</div><div class="dt">no dia ' + br(d.event_date) + ".</div></div>" +
-      '<div class="signs"><div>' + e(d.speaker_name) + "<small>Palestrante</small></div><div>SpeakerConnect<small>speakerconnect.com.br</small></div></div>" +
+      '<div class="signs"><div>' + sig(d.speaker_signature) + e(d.speaker_name) + "<small>Palestrante</small></div><div>" + sig(C.certSignature) + "SpeakerConnect<small>speakerconnect.com.br</small></div></div>" +
       '<div class="code">Verifique em <b>speakerconnect.com.br/certificado</b><br>Código: ' + e(d.code) + "</div>" +
       '<div class="foot">CONECTANDO MENTES,<br>TRANSFORMANDO NEGÓCIOS</div></div>';
   }
@@ -120,8 +126,9 @@ footer a{color:var(--mut)}
   function fit(root) {
     root.querySelectorAll("[data-fit]").forEach(function (el) {
       var max = Number(el.getAttribute("data-fit")), fs = parseFloat(getComputedStyle(el).fontSize);
-      el.style.whiteSpace = "nowrap";
-      while (el.scrollWidth > max && fs > 18) { fs -= 2; el.style.fontSize = fs + "px"; }
+      el.style.whiteSpace = "nowrap"; el.style.display = "inline-block"; // mede só o texto, não a linha inteira
+      while (el.offsetWidth > max && fs > 18) { fs -= 2; el.style.fontSize = fs + "px"; }
+      el.style.display = "";
     });
     var tt = root.querySelector(".tt"), f2 = 36;
     while (tt && tt.offsetHeight > 100 && f2 > 22) { f2 -= 2; tt.style.fontSize = f2 + "px"; }
@@ -137,6 +144,8 @@ footer a{color:var(--mut)}
     var st = $("stage"); st.innerHTML = certHTML(d);
     return (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(function () {
       fit(st);
+      return Promise.all(Array.prototype.map.call(st.querySelectorAll("img"), function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }));
+    }).then(function () {
       return window.html2canvas(st.firstChild, { scale: 1.5, backgroundColor: null, logging: false, useCORS: true });
     });
   }
