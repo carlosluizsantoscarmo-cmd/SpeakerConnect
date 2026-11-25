@@ -173,6 +173,7 @@
   function screenAuth(mode, q) {
     stopTimer();
     var signup = mode === "signup";
+    if (signup) route.expired = false;
     var tipo = (q && q.get("tipo")) === "palestrante" ? "speaker" : "company";
     plain(
       '<div class="tabs" role="tablist"><button type="button" id="t1" class="' + (signup ? "" : "on") + '">Entrar</button><button type="button" id="t2" class="' + (signup ? "on" : "") + '">Criar conta</button></div>' +
@@ -188,7 +189,7 @@
       (signup ? '<p class="hint">Pelo menos 8 caracteres.</p><label class="check"><input type="checkbox" id="tc"><span>Li e aceito os <a href="/termos.html" target="_blank">termos de uso</a> e a <a href="/privacidade.html" target="_blank">política de privacidade</a>.</span></label>' : "") +
       '<input class="hp" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true">' +
       '<div id="cfts" style="margin:12px 0 0"></div>' +
-      '<div id="msg" role="alert"></div>' +
+      '<div id="msg" role="alert">' + (!signup && route.expired ? '<div class="okmsg">O link de confirmação venceu. Entre com seu e-mail e senha: se a conta ainda não estiver confirmada, aparece um botão para receber um link novo.</div>' : "") + "</div>" +
       '<button class="full" id="go" type="submit">' + (signup ? "Criar conta" : "Entrar") + "</button>" +
       (signup ? "" : '<p class="center" style="margin:12px 0 0"><a href="#/esqueci">Esqueci minha senha</a></p>') +
       "</form>" +
@@ -233,7 +234,12 @@
         sb.auth.signInWithPassword({ email: em, password: pw, options: { captchaToken: SCCaptcha.token() } }).then(function (r) {
           busy(btn, false);
           SCCaptcha.reset();
-          if (r.error) { try { sessionStorage.removeItem("sc_offer_pk"); } catch (x) {} return fail(friendly(r.error)); }
+          if (r.error) {
+            try { sessionStorage.removeItem("sc_offer_pk"); } catch (x) {}
+            fail(friendly(r.error));
+            if (/not confirmed/i.test(String(r.error.message || r.error.code || ""))) offerResend(em);
+            return;
+          }
         });
         return;
       }
@@ -251,6 +257,22 @@
         if (!r.data.session) {
           plain('<div class="card"><h3>Confirme seu e-mail</h3><p class="muted" style="margin:6px 0 0">Mandamos um link para <b>' + e(em) + '</b>. Abra o e-mail e toque no link para ativar a conta. Se não chegar em alguns minutos, veja a caixa de spam.</p></div><a class="btn full ghost" href="#/entrar">Já confirmei, quero entrar</a>', "Quase lá");
         }
+      });
+    };
+  }
+
+  // Conta criada mas e-mail não confirmado (link vencido ou e-mail perdido): manda um link novo.
+  function offerResend(em) {
+    var msg = $("msg"); if (!msg) return;
+    msg.insertAdjacentHTML("beforeend", '<button type="button" class="btn full ghost" id="resend" style="margin-top:10px">Reenviar e-mail de confirmação</button>');
+    $("resend").onclick = function () {
+      var b = this;
+      if (SCCaptcha.falta()) { toast("Aguarde a verificação anti-robô terminar e toque de novo."); return; }
+      busy(b, true, "Enviando…");
+      sb.auth.resend({ type: "signup", email: em, options: { emailRedirectTo: location.origin + "/app/", captchaToken: SCCaptcha.token() } }).then(function (r) {
+        SCCaptcha.reset();
+        if (r.error) { busy(b, false); toast(friendly(r.error)); return; }
+        msg.innerHTML = '<div class="okmsg">Enviamos um novo link para <b>' + e(em) + "</b>. Abra o e-mail e toque no link logo, porque ele vale por tempo limitado. Se não chegar, veja o spam ou a quarentena do e-mail da empresa.</div>";
       });
     };
   }
@@ -1165,6 +1187,8 @@
   }
   function route() {
     stopPay();
+    // o Supabase devolve o link vencido como #error=...&error_code=otp_expired: leva para "Entrar" com uma explicação
+    if (/error_code=otp_expired|error=access_denied/.test(location.hash)) { route.expired = true; location.replace("#/entrar"); return; }
     var p = hashParts();
     if (p.path === "#/sair") {
       if (route.leaving) return;

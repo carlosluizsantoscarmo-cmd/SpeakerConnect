@@ -88,6 +88,7 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(79,70,229,.18)}
 .hint{font-size:13.5px;color:var(--mut);margin:6px 0 0}
 .err{background:var(--err-bg);color:var(--err);border-radius:14px;padding:10px 14px;font-size:14.5px;margin:14px 0 0}
+.okmsg{background:var(--ok-bg);color:var(--ok);border-radius:14px;padding:10px 14px;font-size:14.5px;margin:14px 0 0;line-height:1.45}
 .okmsg{background:var(--ok-bg);color:var(--ok);border-radius:14px;padding:10px 14px;font-size:14.5px;margin:14px 0 0}
 .check{display:flex;gap:10px;align-items:flex-start;font-weight:500;font-size:14.5px;margin:16px 0 0}
 .check input{width:20px;height:20px;flex:none;margin-top:1px;accent-color:var(--brand)}
