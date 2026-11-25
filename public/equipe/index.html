@@ -96,7 +96,7 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
   <nav id="tabs" hidden aria-label="Seções">
     <button data-t="palestrantes" class="on">Palestrantes<span class="n" id="n-pend" hidden></span></button>
     <button data-t="indicacoes">Indicações<span class="n" id="n-lead" hidden></span></button>
-    <button data-t="pedidos">Pedidos</button>
+    <button data-t="pedidos">Pedidos<span class="n" id="n-ped" hidden></span></button>
     <button data-t="agenda">Agenda<span class="n" id="n-ag" hidden></span></button>
     <button data-t="pagamentos">Financeiro<span class="n" id="n-rep" hidden></span></button>
     <button data-t="empresas">Empresas<span class="n" id="n-lg" hidden></span></button>
@@ -238,6 +238,8 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
       var t0 = today(), ag = data.quotes.filter(function (q) { return ["accepted", "paid"].indexOf(q.status) > -1 && q.event_date && q.event_date >= t0 && q.event_date <= addDays(t0, 7); }).length;
       $("n-ag").hidden = !ag; $("n-ag").textContent = ag;
       $("n-pend").hidden = !pend; $("n-pend").textContent = pend;
+      var ped = data.quotes.filter(function (q) { return q.status === "requested"; }).length; // aguardando proposta do palestrante
+      $("n-ped").hidden = !ped; $("n-ped").textContent = ped;
       $("n-rep").hidden = !rep; $("n-rep").textContent = rep;
       var al = data.attempts.filter(function (a) { return Date.now() - new Date(a.created_at) < 7 * 864e5; }).length;
       $("n-al").hidden = !al; $("n-al").textContent = al;
@@ -419,6 +421,8 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
     else html += '<div class="scroll"><table><thead><tr><th>Evento</th><th>Empresa → palestrante</th><th class="hide">Data</th><th>Valor</th><th>Situação</th></tr></thead><tbody>' + q.map(function (r) {
       var st = QST[r.status] || [r.status, ""];
       if (r.status === "paid" && r.deposit_cents) st = [fin(r).label, fin(r).cls];
+      var age = Math.floor((Date.now() - new Date(r.created_at)) / 864e5);
+      if (r.status === "requested") st = [st[0] + (age >= 1 ? " há " + age + (age === 1 ? " dia" : " dias") : " (novo)"), age >= 2 ? "err" : "warn"];
       return "<tr><td><b>" + e(r.title) + '</b><div class="sub">Pedido em ' + d(r.created_at) + " · " + (r.format === "online" ? "online" : e([r.city, r.uf].filter(Boolean).join("/"))) + (r.audience ? " · " + r.audience + " pessoas" : "") + "</div></td>" +
         "<td>" + e(r.company_name) + '<div class="sub">para ' + e(r.speaker_name) + "</div></td>" +
         '<td class="hide">' + (r.event_date ? r.event_date.split("-").reverse().join("/") : "A combinar") + "</td>" +
