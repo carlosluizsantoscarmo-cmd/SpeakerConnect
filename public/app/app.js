@@ -5,7 +5,7 @@
   "use strict";
   var C = window.SC || {};
   var app = document.getElementById("app");
-  var TERMS = "2026-11-v2", SPEAKER_TERMS = "2026-11-v3";
+  var TERMS = "2026-11-v2", SPEAKER_TERMS = "2026-11-v4";
   var sb = null, user = null, profile = null, me = null, cats = [], timer = null, installEvt = null, recovering = false, mpConn = null, myDoc = null, mySig = null, payActive = false, payTimer = null;
 
   // ---------- utilidades ----------

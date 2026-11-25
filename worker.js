@@ -444,6 +444,16 @@ export async function applyPayment(env, request, mp, ctx) {
 
   // Devolvido em parte (cancelamento com taxa): o Mercado Pago continua "approved"; não confirmar de novo.
   if (pay.refunded_at && mp.status === "approved") return { reason: "ja-devolvido", status: pay.status };
+  // Devolução parcial feita direto no Mercado Pago (fora do painel): registra e avisa a equipe para conferir o pedido.
+  // Não cancela o pedido sozinha: pode ter sido um desconto combinado, e não um cancelamento.
+  if (mp.status === "approved" && mp.status_detail === "partially_refunded" && pay.status === "paid") {
+    const back = Math.round(Number(mp.transaction_amount_refunded || 0) * 100);
+    await sb(env, `/rest/v1/payments?id=eq.${pay.id}`, { method: "PATCH", body: { status: "refunded", refunded_at: new Date().toISOString(), refunded_cents: back } });
+    later(ctx, sendMail(env, { to: env.NOTIFY_EMAIL, subject: `Devolução parcial fora do painel: ${brl(back)} - ${line(pay.payer_name, 60)}`,
+      text: `O pagamento "${line(pay.description, 160)}" (${brl(pay.amount_cents)}) teve ${brl(back)} devolvidos direto no Mercado Pago.\n` +
+            `Pagamento no Mercado Pago: ${mp.id}\n\nConfira no painel da equipe se o pedido precisa ser cancelado ou se foi um desconto combinado.` }));
+    return { reason: "devolucao-parcial", status: "refunded" };
+  }
   const patch = { mp_payment_id: String(mp.id) };
   let firstTime = false;
   if (mp.status === "approved") {

@@ -406,3 +406,20 @@ test("avisos da equipe saem de avisos@ para o Responder do Gmail ir para a empre
   assert.equal(fromFor(env, "admin@speakerconnect.com.br"), "SpeakerConnect Avisos <avisos@speakerconnect.com.br>");
   assert.equal(fromFor(env, "ana@x.com"), "SpeakerConnect <contato@speakerconnect.com.br>");
 });
+
+test("devolução parcial feita direto no Mercado Pago: registra, avisa a equipe e não cancela o pedido sozinha", async () => {
+  const t = await setup();
+  await t.call("/api/mp/pagar", { method: "POST", token: "a.b.carla", body: { kind: "quote", quote_id: QUOTE, ...card } });
+  const pay = t.db.payments[0], m = t.mpPayments[pay.mp_payment_id];
+  assert.equal(pay.status, "paid");
+  const before = t.mails.length, qst = t.db.quotes[0].status;
+  m.status_detail = "partially_refunded"; m.transaction_amount_refunded = 500;
+  const w = await t.call("/api/mp-webhook?data.id=" + pay.mp_payment_id + "&type=payment", { method: "POST", headers: await signed(t.env, pay.mp_payment_id), body: { type: "payment", data: { id: pay.mp_payment_id } } });
+  assert.equal(w.status, 200);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(pay.status, "refunded");
+  assert.equal(pay.refunded_cents, 50000);
+  assert.ok(pay.refunded_at);
+  assert.equal(t.db.quotes[0].status, qst, "o pedido não é cancelado automaticamente");
+  assert.ok(t.mails.slice(before).some((x) => /^Devolução parcial fora do painel/.test(x.subject)));
+});
