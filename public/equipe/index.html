@@ -220,7 +220,8 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
       sb.from("contact_attempts").select("*").order("created_at", { ascending: false }).limit(500),
       sb.from("leads").select("*").order("created_at", { ascending: false }).limit(500),
       sb.from("cert_events").select("*").order("event_date", { ascending: false }).limit(500),
-      sb.from("certificates").select("id,event_id,code,name,email,created_at").order("created_at").limit(20000)
+      sb.from("certificates").select("id,event_id,code,name,email,created_at").order("created_at").limit(20000),
+      sb.from("speaker_reviews").select("*").order("created_at", { ascending: false }).limit(500)
     ]).then(function (r) {
       var bad = r.slice(0, 8).filter(function (x) { return x.error; })[0];
       if (bad) throw bad.error;
@@ -230,6 +231,7 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
       data.leads = (!r[8].error && r[8].data) || [];
       data.certEvents = (!r[9].error && r[9].data) || [];
       data.certs = (!r[10].error && r[10].data) || [];
+      data.reviews = (!r[11].error && r[11].data) || [];
       var nl = data.leads.filter(function (l) { return l.status === "new"; }).length;
       $("n-lead").hidden = !nl; $("n-lead").textContent = nl;
       data.prof = {}; data.profiles.forEach(function (p) { data.prof[p.id] = p; });
@@ -590,7 +592,18 @@ h2.mo{font:800 17px var(--f-display);font-stretch:110%;margin:22px 0 10px}
         '<button class="ghost" data-cv="' + ev.id + '">' + (certOpen === ev.id ? "Esconder lista" : "Ver lista") + "</button>" + (list.length ? '<button class="ghost" data-cx="' + ev.id + '">Baixar lista (Excel)</button>' : "") +
         '<button class="' + (ev.open ? "bad" : "ok") + '" data-co="' + ev.id + '">' + (ev.open ? "Encerrar" : "Reabrir") + "</button></div></td></tr>";
     }).join("") + "</tbody></table></div>";
+    html += '<h2 style="margin-top:28px">Avaliações</h2><p style="color:var(--mut);margin:-4px 0 12px">Notas da plateia (pelo certificado) e das empresas (depois da palestra). Uma avaliação oculta sai do perfil público.</p>';
+    if (!data.reviews.length) html += '<div class="empty">Nenhuma avaliação ainda.</div>';
+    else html += '<div class="scroll"><table><thead><tr><th>Nota</th><th>Avaliação</th><th class="hide">Palestrante</th><th>Ações</th></tr></thead><tbody>' + data.reviews.map(function (v) {
+      var sp = data.speakers.filter(function (x) { return x.id === v.speaker_id; })[0];
+      return "<tr" + (v.hidden ? ' style="opacity:.55"' : "") + "><td><b>" + "★★★★★".slice(0, v.rating) + '</b><span style="color:var(--mut)">' + "★★★★★".slice(v.rating) + "</span></td><td><b>" + e(v.author) + '</b> <span class="sub">' + (v.source === "company" ? "Empresa" : "Participante") + " · " + d(v.created_at) + "</span>" +
+        (v.comment ? '<div style="margin-top:4px">' + e(v.comment) + "</div>" : "") + '<div class="sub">' + e(v.talk_title || "") + '</div></td><td class="hide">' + e(sp ? sp.public_name : "") + '</td><td><button class="' + (v.hidden ? "ok" : "bad") + '" data-rh="' + v.id + '">' + (v.hidden ? "Mostrar" : "Ocultar") + "</button></td></tr>";
+    }).join("") + "</tbody></table></div>";
     main.innerHTML = html;
+    main.querySelectorAll("[data-rh]").forEach(function (b) { b.onclick = function () {
+      var v = data.reviews.filter(function (x) { return x.id === b.getAttribute("data-rh"); })[0];
+      sb.from("speaker_reviews").update({ hidden: !v.hidden }).eq("id", v.id).then(function (r) { if (!fail(r)) { toast(v.hidden ? "Avaliação visível no perfil." : "Avaliação ocultada."); refresh(); } });
+    }; });
     var f = $("cform"), byId = function (id) { return data.certEvents.filter(function (x) { return x.id === id; })[0]; };
     $("cnew").onclick = function () { f.hidden = false; f.style.display = "grid"; $("ct").focus(); };
     $("ccancel").onclick = function () { f.hidden = true; f.style.display = "none"; };

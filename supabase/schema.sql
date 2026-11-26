@@ -1047,7 +1047,8 @@ begin
   return jsonb_build_object('code', c.code, 'name', c.name, 'issued_at', c.created_at,
     'company_name', ev.company_name, 'event_name', ev.event_name, 'talk_title', ev.talk_title,
     'speaker_name', ev.speaker_name, 'event_date', ev.event_date, 'duration_min', ev.duration_min,
-    'speaker_signature', (select url from public.speaker_signatures where speaker_id = ev.speaker_id));
+    'speaker_signature', (select url from public.speaker_signatures where speaker_id = ev.speaker_id),
+    'can_review', ev.speaker_id is not null and current_date <= ev.event_date + 30);
 end $$;
 
 -- confere um certificado pelo código (não mostra o e-mail)
@@ -1063,3 +1064,106 @@ $$;
 
 revoke execute on function public.cert_event_info(text), public.issue_certificate(text, text, text), public.verify_certificate(text) from public;
 grant execute on function public.cert_event_info(text), public.issue_certificate(text, text, text), public.verify_certificate(text) to anon, authenticated;
+
+-- ---------- Avaliações verificadas dos palestrantes ----------
+-- Só avalia quem participou de verdade:
+--   participante: quem emitiu o certificado do evento (código + e-mail usado na emissão);
+--   empresa: a contratante, depois de marcar a palestra como realizada.
+-- Cada certificado e cada pedido avaliam uma vez (pode corrigir a própria avaliação).
+-- A equipe pode ocultar uma avaliação; ninguém de fora lê a tabela direto, só pelas funções.
+
+create table if not exists public.speaker_reviews (
+  id             uuid primary key default gen_random_uuid(),
+  speaker_id     uuid not null references public.speakers(id) on delete cascade,
+  source         text not null check (source in ('participant', 'company')),
+  certificate_id uuid unique references public.certificates(id) on delete cascade,
+  quote_id       uuid unique references public.quotes(id) on delete cascade,
+  rating         int  not null check (rating between 1 and 5),
+  comment        text check (comment is null or char_length(comment) <= 400),
+  author         text not null check (char_length(author) between 2 and 120),
+  talk_title     text,
+  event_date     date,
+  hidden         boolean not null default false,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  check ((source = 'participant') = (certificate_id is not null) and (source = 'company') = (quote_id is not null))
+);
+create index if not exists speaker_reviews_speaker on public.speaker_reviews (speaker_id, created_at desc);
+alter table public.speaker_reviews enable row level security;
+drop policy if exists speaker_reviews_admin on public.speaker_reviews;
+create policy speaker_reviews_admin on public.speaker_reviews for all to authenticated using (public.is_admin()) with check (public.is_admin());
+revoke all on public.speaker_reviews from anon;
+grant select, update on public.speaker_reviews to authenticated;
+
+-- "Maria Aparecida Souza" -> "Maria S."
+create or replace function private.short_name(n text) returns text
+language sql immutable set search_path = '' as $$
+  select case when array_length(p, 1) > 1 then p[1] || ' ' || left(p[array_length(p, 1)], 1) || '.' else p[1] end
+    from (select regexp_split_to_array(trim(n), '\s+') p) x;
+$$;
+
+-- participante avalia pela página do certificado
+create or replace function public.review_from_certificate(p_code text, p_email text, p_rating int, p_comment text) returns jsonb
+language plpgsql volatile security definer set search_path = public, private as $$
+declare c public.certificates; ev public.cert_events; cm text;
+begin
+  select * into c from public.certificates where code = upper(trim(p_code)) and lower(email) = lower(trim(coalesce(p_email, '')));
+  if c.id is null then raise exception 'Certificado não encontrado.' using errcode = 'P0002'; end if;
+  select * into ev from public.cert_events where id = c.event_id;
+  if ev.speaker_id is null then raise exception 'Este evento não recebe avaliações.' using errcode = '23514'; end if;
+  if current_date > ev.event_date + 30 then raise exception 'O prazo para avaliar este evento terminou.' using errcode = '23514'; end if;
+  if p_rating is null or p_rating not between 1 and 5 then raise exception 'Escolha de 1 a 5 estrelas.' using errcode = '23514'; end if;
+  cm := nullif(left(regexp_replace(trim(coalesce(p_comment, '')), '\s+', ' ', 'g'), 400), '');
+  if cm is not null and private.has_contact(cm, false) then raise exception 'Não inclua telefone, e-mail, redes sociais ou links na avaliação.' using errcode = 'P0001'; end if;
+  insert into public.speaker_reviews (speaker_id, source, certificate_id, rating, comment, author, talk_title, event_date)
+  values (ev.speaker_id, 'participant', c.id, p_rating, cm, private.short_name(c.name), ev.talk_title, ev.event_date)
+  on conflict (certificate_id) do update set rating = excluded.rating, comment = excluded.comment, updated_at = now();
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- empresa avalia o pedido depois de marcar a palestra como realizada
+create or replace function public.review_quote(p_quote uuid, p_rating int, p_comment text) returns jsonb
+language plpgsql volatile security definer set search_path = public, private as $$
+declare q public.quotes; cm text; cn text;
+begin
+  select * into q from public.quotes where id = p_quote and company_id = auth.uid();
+  if q.id is null then raise exception 'Pedido não encontrado.' using errcode = 'P0002'; end if;
+  if q.status <> 'done' then raise exception 'Avalie depois de marcar a palestra como realizada.' using errcode = '23514'; end if;
+  if p_rating is null or p_rating not between 1 and 5 then raise exception 'Escolha de 1 a 5 estrelas.' using errcode = '23514'; end if;
+  cm := nullif(left(regexp_replace(trim(coalesce(p_comment, '')), '\s+', ' ', 'g'), 400), '');
+  if cm is not null and private.has_contact(cm, false) then raise exception 'Não inclua telefone, e-mail, redes sociais ou links na avaliação.' using errcode = 'P0001'; end if;
+  select coalesce(nullif(trim(c.company_name), ''), q.company_name) into cn from public.companies c where c.id = q.company_id;
+  insert into public.speaker_reviews (speaker_id, source, quote_id, rating, comment, author, talk_title, event_date)
+  values (q.speaker_id, 'company', q.id, p_rating, cm, coalesce(cn, q.company_name, 'Empresa'), q.title, q.event_date)
+  on conflict (quote_id) do update set rating = excluded.rating, comment = excluded.comment, updated_at = now();
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- a própria avaliação do pedido (para o app mostrar o que a empresa já mandou)
+create or replace function public.my_quote_review(p_quote uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('rating', r.rating, 'comment', r.comment)
+    from public.speaker_reviews r join public.quotes q on q.id = r.quote_id
+   where r.quote_id = p_quote and q.company_id = auth.uid();
+$$;
+
+-- o que o perfil público mostra: média, total e as mais recentes (sem e-mail, sem ids)
+create or replace function public.speaker_reviews_public(p_speaker uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'count', count(*),
+    'avg', round(avg(rating)::numeric, 1),
+    'items', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select r.rating, r.comment, r.author, r.source, r.talk_title, r.event_date, r.created_at
+          from public.speaker_reviews r
+         where r.speaker_id = p_speaker and not r.hidden
+         order by (r.comment is null), r.created_at desc limit 12) x), '[]'::jsonb))
+    from public.speaker_reviews r join public.speakers s on s.id = r.speaker_id
+   where r.speaker_id = p_speaker and not r.hidden and s.status = 'approved';
+$$;
+
+revoke execute on function public.review_from_certificate(text, text, int, text), public.review_quote(uuid, int, text),
+  public.my_quote_review(uuid), public.speaker_reviews_public(uuid) from public;
+grant execute on function public.review_from_certificate(text, text, int, text), public.speaker_reviews_public(uuid) to anon, authenticated;
+grant execute on function public.review_quote(uuid, int, text), public.my_quote_review(uuid) to authenticated;
+revoke execute on function private.short_name(text) from public, anon, authenticated;

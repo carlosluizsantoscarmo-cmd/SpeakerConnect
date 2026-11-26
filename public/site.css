@@ -189,6 +189,18 @@ footer .social a:hover,footer .social a:focus-visible{background:rgba(255,255,25
 .prof-body aside li{margin-bottom:8px}
 .talks{display:grid;gap:12px;margin-top:6px}
 .talk{background:#fff;border:1px solid var(--line);border-left:4px solid var(--spot);border-radius:var(--r-md);padding:14px 18px;font-weight:600}
+.rating{display:inline-flex;align-items:center;gap:8px;margin:0 0 14px;font-size:15px;color:#D9D8F5}
+.rating b{color:#fff;font-size:18px}
+.rstars{display:inline-flex;gap:2px;color:var(--spot)}
+.rstars svg{width:18px;height:18px}
+.reviews{display:grid;gap:12px}
+.review{background:#fff;border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px}
+.review p{margin:8px 0 0;line-height:1.5}
+.review .who{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:14px;color:var(--mut)}
+.review .who b{color:var(--ink)}
+.review .vf{font-size:12px;font-weight:600;color:#1F6B3A;background:#E7F6EC;border-radius:999px;padding:2px 8px}
+.rsum{display:flex;align-items:baseline;gap:10px;margin:0 0 14px;color:var(--mut)}
+.rsum b{font-size:32px;color:var(--ink)}
 .facts{display:flex;flex-wrap:wrap;gap:10px 28px;margin:20px 0 6px;font-size:15px;color:var(--mut)}
 .facts b{color:var(--ink);display:block;font-size:17px}
 .bio{max-width:68ch;white-space:pre-line}

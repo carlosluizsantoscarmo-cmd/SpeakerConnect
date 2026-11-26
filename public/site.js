@@ -373,6 +373,32 @@
         '<a class="btn" style="width:100%" href="' + ask + '">Pedir orçamento</a></div></aside></div></div>' +
         '<div class="askbar">' + from + '<a class="btn spot" href="' + ask + '">Pedir orçamento</a></div>';
       document.body.classList.add("with-askbar");
+      reviews(s);
+    });
+  }
+  // Avaliações verificadas (participantes pelo certificado, empresas depois da palestra)
+  function starRow(n) {
+    var out = "";
+    for (var i = 1; i <= 5; i++) out += '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" fill="' + (i <= Math.round(n) ? "currentColor" : "none") + '" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+    return '<span class="rstars" role="img" aria-label="' + String(n).replace(".", ",") + ' de 5 estrelas">' + out + "</span>";
+  }
+  function reviews(s) {
+    sb.rpc("speaker_reviews_public", { p_speaker: s.id }).then(function (r) {
+      var d = r && r.data;
+      if (!d || !d.count) return;
+      var avg = Number(d.avg).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      var cnt = d.count + (d.count === 1 ? " avaliação" : " avaliações");
+      var hl = document.querySelector(".prof-top h1");
+      if (hl) hl.insertAdjacentHTML("afterend", '<p class="rating">' + starRow(d.avg) + "<b>" + avg + "</b> · " + cnt + " verificadas</p>");
+      var items = (d.items || []).map(function (x) {
+        var who = x.source === "company" ? "Empresa contratante" : "Participante";
+        var when = x.event_date ? String(x.event_date).slice(0, 7).split("-").reverse().join("/") : "";
+        return '<div class="review"><div class="who">' + starRow(x.rating) + "<b>" + e(x.author) + "</b><span>" + who + (when ? " · " + when : "") + '</span><span class="vf">✓ verificada</span></div>' +
+          (x.comment ? "<p>" + e(x.comment) + "</p>" : "") + "</div>";
+      }).join("");
+      var col = document.querySelector(".prof-body .wrap > div");
+      if (col) col.insertAdjacentHTML("beforeend", '<div class="blk"><h2>Avaliações</h2><div class="rsum"><b>' + avg + "</b>" + starRow(d.avg) + "<span>" + cnt + " de quem participou ou contratou</span></div>" +
+        '<div class="reviews">' + items + "</div></div>");
     });
   }
 

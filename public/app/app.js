@@ -688,6 +688,7 @@
         (Q.balance_paid_at ? "A empresa pagou o sinal e o saldo. Bom evento!" : "Sinal de " + brl(Q.deposit_cents) + " pago. Saldo de " + brl(Q.amount_cents - Q.deposit_cents) + (Q.balance_due_on ? " até " + e(ymdBr(Q.balance_due_on)) : "") + ". Avisamos você quando for pago.") + "</p></div>";
       if (Q.status === "paid" || Q.status === "done") html += '<div class="card" id="contacts"><h3>Contato liberado</h3><p class="muted small">Carregando…</p></div>';
       if (!sp && Q.status === "paid" && (!Q.deposit_cents || Q.balance_paid_at)) html += '<button class="full ghost" id="done" type="button">A palestra já aconteceu</button>';
+      if (!sp && Q.status === "done") html += '<div class="card" id="rvbox"><h3>Avalie a palestra</h3><p class="muted small">Carregando…</p></div>';
 
       // conversa
       var canWrite = ["declined", "cancelled"].indexOf(Q.status) < 0;
@@ -735,6 +736,7 @@
       if ($("paybox")) { var PP = chargePlan(Q); payPanel($("paybox"), { kind: "quote", quoteId: Q.id, amount: PP ? PP.cents : Q.amount_cents, onPaid: function () { load().then(render); } }); }
       if ($("done")) $("done").onclick = function () { update({ status: "done" }, "Que bom! Obrigado por usar o SpeakerConnect."); };
       if ($("cancel")) $("cancel").onclick = function () { if (window.confirm("Cancelar este pedido?")) update({ status: "cancelled" }, "Pedido cancelado."); };
+      if ($("rvbox")) reviewBox($("rvbox"), Q);
       if ($("contacts")) sb.rpc("quote_contacts", { qid: Q.id }).then(function (r) {
         var c = (r.data || [])[0], box = $("contacts");
         if (!box) return;
@@ -840,6 +842,37 @@
       img.src = url;
     });
   }
+  // ---------- avaliação da palestra pela empresa (depois de "A palestra já aconteceu") ----------
+  var RV_LABELS = ["", "Ruim", "Regular", "Boa", "Muito boa", "Excelente"];
+  function rvStar(on) { return '<svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" fill="' + (on ? "#F5B841" : "none") + '" stroke="#C88A12" stroke-width="1.5" stroke-linejoin="round"/></svg>'; }
+  function reviewBox(box, Q) {
+    sb.rpc("my_quote_review", { p_quote: Q.id }).then(function (r) {
+      var mine = r && r.data, nota = mine ? mine.rating : 0;
+      box.innerHTML = "<h3>" + (mine ? "Sua avaliação" : "Avalie a palestra") + "</h3>" +
+        '<p class="muted small" style="margin:4px 0 8px">Sua avaliação aparece no perfil de ' + e(Q.speaker_name) + " com o nome da empresa e ajuda outras empresas a escolherem.</p>" +
+        '<div role="radiogroup" aria-label="Nota de 1 a 5" style="display:flex;gap:4px">' + [1, 2, 3, 4, 5].map(function (n) { return '<button type="button" class="rvst" role="radio" aria-checked="false" aria-label="' + n + " estrela" + (n > 1 ? "s" : "") + " – " + RV_LABELS[n] + '" data-n="' + n + '" style="background:none;border:0;padding:4px;min-height:0;box-shadow:none;line-height:0">' + rvStar(false) + "</button>"; }).join("") + "</div>" +
+        '<p class="muted small" id="rvl" style="margin:2px 0 6px;min-height:18px"></p>' +
+        '<label for="rvc">Comentário <span class="opt">(opcional)</span></label><textarea id="rvc" maxlength="400" placeholder="Como foi a palestra para a sua equipe?">' + e((mine && mine.comment) || "") + "</textarea>" +
+        '<div id="rve" role="alert"></div><button class="full" id="rvgo" type="button" style="margin-top:10px">' + (mine ? "Atualizar avaliação" : "Enviar avaliação") + "</button>";
+      function paint() {
+        box.querySelectorAll(".rvst").forEach(function (b) { var k = Number(b.getAttribute("data-n")); b.innerHTML = rvStar(k <= nota); b.setAttribute("aria-checked", k === nota ? "true" : "false"); });
+        $("rvl").textContent = RV_LABELS[nota] || "";
+      }
+      box.querySelectorAll(".rvst").forEach(function (b) { b.onclick = function () { nota = Number(b.getAttribute("data-n")); paint(); $("rve").innerHTML = ""; }; });
+      paint();
+      $("rvgo").onclick = function () {
+        var bt = this; $("rve").innerHTML = "";
+        if (!nota) { $("rve").innerHTML = '<div class="err">Escolha de 1 a 5 estrelas.</div>'; return; }
+        busy(bt, true, "Enviando…");
+        sb.rpc("review_quote", { p_quote: Q.id, p_rating: nota, p_comment: $("rvc").value.trim() || null }).then(function (x) {
+          busy(bt, false);
+          if (x.error) { $("rve").innerHTML = '<div class="err">' + e(friendly(x.error)) + "</div>"; return; }
+          toast("Obrigado pela avaliação!"); bt.textContent = "Atualizar avaliação";
+        });
+      };
+    });
+  }
+
   // ---------- assinatura para os certificados ----------
   // Foto da assinatura num papel branco ou desenhada com o dedo: vira PNG transparente, recortado na tinta.
   function inkPNG(src) {
